@@ -13,11 +13,19 @@ A comprehensive Enterprise Resource Planning (ERP) solution powered by artificia
 
 ## Technology Stack
 
-- Frontend: React.js with TypeScript
-- Backend: Python (FastAPI)
+### Frontend
+- React.js with Vite (TypeScript)
+- Styling: TailwindCSS
+- Component Library: shadcn/ui
+- Icons: TBD (choosing between Lucide UI and Iconify)
+
+### Backend
+- Python (FastAPI)
 - Database: PostgreSQL
-- AI/ML: TensorFlow/PyTorch
 - Authentication: JWT
+
+### AI/ML
+- TensorFlow/PyTorch
 
 ## Getting Started
 
@@ -38,8 +46,19 @@ cd AI-powered-ERP-solution
 
 2. Set up frontend:
 ```bash
+# Navigate to frontend directory
 cd src/frontend
-npm install
+
+# Install dependencies
+npm create vite@latest . -- --template react-ts
+npm install tailwindcss postcss autoprefixer
+npm install @shadcn/ui
+npm install -D @types/node
+
+# Initialize Tailwind CSS
+npx tailwindcss init -p
+
+# Start development server
 npm run dev
 ```
 
