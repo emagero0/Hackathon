@@ -8,16 +8,35 @@ We love your input! We want to make contributing to this project as easy and tra
 - Proposing new features
 - Becoming a maintainer
 
-## Development Process
+## Development Process (Git Flow)
 
-We use GitHub to host code, to track issues and feature requests, as well as accept pull requests.
+We follow Git Flow for our development process:
 
-1. Fork the repo and create your branch from `main`
-2. If you've added code that should be tested, add tests
-3. If you've changed APIs, update the documentation
-4. Ensure the test suite passes
-5. Make sure your code lints
-6. Issue that pull request!
+### Branch Structure
+- `main` - Production-ready code only
+- `develop` - Main development branch where features are integrated
+- Feature branches - Individual development work
+
+### Branch Naming Convention
+Feature branches should follow this naming pattern:
+- `backend-*` - Backend team working on API (e.g., `backend-api-integration`)
+- `ai-*` - AI team working on ML features (e.g., `ai-document-verification`)
+- `frontend-*` - Frontend team working on UI (e.g., `frontend-dashboard`)
+- `devops-*` - DevOps team working on infrastructure (e.g., `devops-deployment`)
+
+### Development Workflow
+1. Create your feature branch from `develop` following the naming convention
+2. Develop and test your changes
+3. Keep your branch updated with `develop`
+4. If you've added code that should be tested, add tests
+5. If you've changed APIs, update the documentation
+6. Ensure the test suite passes
+7. Make sure your code lints
+8. Create a pull request to merge into `develop`
+
+### Merging Process
+1. Feature branches → `develop` (requires code review)
+2. `develop` → `main` (requires thorough testing and approval)
 
 ## Pull Request Process
 
