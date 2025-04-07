@@ -1,0 +1,13 @@
+com\erp\aierpbackend\dto\openai\OpenAiChatRequest$OpenAiChatRequestBuilder.class
+com\erp\aierpbackend\dto\openai\OpenAiMessage.class
+com\erp\aierpbackend\dto\openai\OpenAiChatRequest.class
+com\erp\aierpbackend\dto\NlpResponse.class
+com\erp\aierpbackend\dto\openai\OpenAiChatResponse.class
+com\erp\aierpbackend\controller\NlpController.class
+com\erp\aierpbackend\dto\openai\OpenAiUsage.class
+com\erp\aierpbackend\service\OpenAiClientService.class
+com\erp\aierpbackend\dto\NlpRequest.class
+com\erp\aierpbackend\dto\openai\OpenAiChoice.class
+com\erp\aierpbackend\AiErpBackendApplication.class
+com\erp\aierpbackend\dto\NlpResponse$Discrepancy.class
+com\erp\aierpbackend\service\NlpService.class

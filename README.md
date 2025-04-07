@@ -20,9 +20,16 @@ A comprehensive Enterprise Resource Planning (ERP) solution powered by artificia
 - Icons: TBD (choosing between Lucide UI and Iconify)
 
 ### Backend
-- Python (FastAPI)
-- Database: PostgreSQL
-- Authentication: JWT
+- Spring Boot (Java) using Maven
+- Database: MySQL
+- Authentication: OAuth2.0
+- Database Migrations: Flyway
+- API Documentation: Swagger/Springdoc OpenAPI
+- Testing: Unit tests with JUnit & Mockito, plus integration tests
+- Logging: Logback and Spring Boot Actuator (with optional Prometheus/Grafana integration)
+- Exception Handling: Global error handling and enhanced security (including CSRF protection and rate limiting)
+- Configuration: Externalized via Spring Boot properties and environment variables (optionally Spring Cloud Config)
+- Containerization & CI/CD: Docker and Kubernetes; CI/CD pipelines using GitHub Actions or Jenkins
 
 ### AI/ML
 - TensorFlow/PyTorch
@@ -32,19 +39,34 @@ A comprehensive Enterprise Resource Planning (ERP) solution powered by artificia
 ### Prerequisites
 
 - Node.js 18+
-- Python 3.9+
-- PostgreSQL
+- Java JDK 17 or later
+- Maven 3.8+
+- MySQL 8.0+
 - Git
+- Docker (optional for containerization)
+- Kubernetes (optional for orchestration)
 
 ### Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/AI-powered-ERP-solution.git
+git clone https://github.com/emagero0/AI-powered-ERP-solution.git
 cd AI-powered-ERP-solution
 ```
 
-2. Set up frontend:
+2. Set up backend:
+```bash
+# Navigate to backend directory
+cd src/backend
+
+# Build with Maven
+mvn clean install
+
+# Run the application
+mvn spring-boot:run
+```
+
+3. Set up frontend:
 ```bash
 # Navigate to frontend directory
 cd src/frontend
@@ -62,14 +84,6 @@ npx tailwindcss init -p
 npm run dev
 ```
 
-3. Set up backend:
-```bash
-cd src/backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
-```
 
 ## Contributing
 
