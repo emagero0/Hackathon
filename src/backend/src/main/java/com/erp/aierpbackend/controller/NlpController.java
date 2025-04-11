@@ -27,8 +27,8 @@ public class NlpController {
     public Mono<ResponseEntity<NlpResponse>> verifyDocument(@RequestBody NlpRequest request) { // Return type is now Mono
         log.info("Received NLP verification request: {}", request.getMetadata()); // Log metadata for tracking
 
-        // Call the async service method
-        return nlpService.verifyDocument(request)
+        // Call the async service method (updated method name)
+        return nlpService.verifyDocumentAndPersist(request)
             .map(response -> {
                 // Executed when the Mono completes successfully
                 log.info("NLP verification successful for request: {}", request.getMetadata().getOrDefault("documentId", "N/A"));

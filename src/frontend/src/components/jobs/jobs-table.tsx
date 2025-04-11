@@ -4,99 +4,54 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu"
 import { Button } from "../../components/ui/button"
 import { Badge } from "../../components/ui/badge"
-import { AlertTriangle, CheckCircle, Clock, MoreHorizontal } from "lucide-react"
+import { AlertTriangle, CheckCircle, Clock, MoreHorizontal, Loader2 } from "lucide-react" // Added Loader2
 import { Link } from "react-router-dom"
+import { useState, useEffect } from "react" // Added imports
+import { getJobs } from "../../lib/api" // Added import
+import { format } from 'date-fns' // Added import
+
+// Define an interface matching the backend JobSummaryDTO
+interface JobSummary {
+  internalId: number;
+  businessCentralJobId: string;
+  jobTitle: string;
+  customerName: string;
+  status: 'PENDING' | 'PROCESSING' | 'VERIFIED' | 'FLAGGED' | 'ERROR'; // Match backend enum
+  lastProcessedAt: string; // Assuming ISO string format from backend
+}
 
 export function JobsTable() {
-  const jobs = [
-    {
-      id: "JOB-1234",
-      title: "Sales Quote #SQ-5678",
-      customer: "Acme Corp",
-      status: "verified",
-      date: "Apr 2, 2023",
-      amount: "$12,450.00",
-    },
-    {
-      id: "JOB-1235",
-      title: "Invoice #INV-9012",
-      customer: "Globex Inc",
-      status: "flagged",
-      date: "Apr 2, 2023",
-      amount: "$8,750.00",
-      issues: ["Amount mismatch", "Missing signature"],
-    },
-    {
-      id: "JOB-1236",
-      title: "Delivery Note #DN-3456",
-      customer: "Wayne Enterprises",
-      status: "pending",
-      date: "Apr 2, 2023",
-      amount: "$5,280.00",
-    },
-    {
-      id: "JOB-1237",
-      title: "Purchase Order #PO-7890",
-      customer: "Stark Industries",
-      status: "verified",
-      date: "Apr 1, 2023",
-      amount: "$24,999.99",
-    },
-    {
-      id: "JOB-1238",
-      title: "Credit Note #CN-1122",
-      customer: "Oscorp",
-      status: "flagged",
-      date: "Apr 1, 2023",
-      amount: "$1,500.00",
-      issues: ["Incorrect tax calculation"],
-    },
-    {
-      id: "JOB-1239",
-      title: "Sales Quote #SQ-3344",
-      customer: "LexCorp",
-      status: "verified",
-      date: "Mar 31, 2023",
-      amount: "$18,200.00",
-    },
-    {
-      id: "JOB-1240",
-      title: "Invoice #INV-5566",
-      customer: "Umbrella Corp",
-      status: "pending",
-      date: "Mar 31, 2023",
-      amount: "$7,300.00",
-    },
-    {
-      id: "JOB-1241",
-      title: "Purchase Order #PO-7788",
-      customer: "Cyberdyne Systems",
-      status: "verified",
-      date: "Mar 30, 2023",
-      amount: "$32,100.00",
-    },
-    {
-      id: "JOB-1242",
-      title: "Delivery Note #DN-9900",
-      customer: "Weyland-Yutani",
-      status: "flagged",
-      date: "Mar 30, 2023",
-      amount: "$9,450.00",
-      issues: ["Quantity mismatch", "Wrong delivery address"],
-    },
-    {
-      id: "JOB-1243",
-      title: "Credit Note #CN-1122",
-      customer: "Massive Dynamic",
-      status: "verified",
-      date: "Mar 29, 2023",
-      amount: "$2,800.00",
-    },
-  ]
+  const [jobs, setJobs] = useState<JobSummary[]>([]) // State for fetched jobs
+  const [isLoading, setIsLoading] = useState(true) // Loading state
+  const [error, setError] = useState<string | null>(null) // Error state
 
-  const getStatusBadge = (status: string) => {
+  useEffect(() => {
+    const fetchJobs = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data: JobSummary[] = await getJobs();
+        // Sort by lastProcessedAt descending (optional, could be done by backend)
+        const sortedData = data.sort((a, b) => {
+          const dateA = a.lastProcessedAt ? new Date(a.lastProcessedAt).getTime() : 0;
+          const dateB = b.lastProcessedAt ? new Date(b.lastProcessedAt).getTime() : 0;
+          return dateB - dateA;
+        });
+        setJobs(sortedData);
+      } catch (err) {
+        setError("Failed to fetch jobs.");
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchJobs();
+  }, []);
+
+  const getStatusBadge = (status: JobSummary['status']) => { // Use JobSummary status type
     switch (status) {
-      case "verified":
+      case "VERIFIED": // Match backend enum
         return (
           <Badge
             variant="outline"
@@ -106,7 +61,7 @@ export function JobsTable() {
             Verified
           </Badge>
         )
-      case "flagged":
+      case "FLAGGED": // Match backend enum
         return (
           <Badge
             variant="outline"
@@ -116,7 +71,8 @@ export function JobsTable() {
             Flagged
           </Badge>
         )
-      case "pending":
+      case "PENDING": // Match backend enum
+      case "PROCESSING": // Group PROCESSING with PENDING visually
         return (
           <Badge
             variant="outline"
@@ -126,8 +82,19 @@ export function JobsTable() {
             Pending
           </Badge>
         )
+       case "ERROR": // Added Error status
+        return (
+          <Badge
+            variant="outline"
+            className="bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
+          >
+            <AlertTriangle className="mr-1 h-3 w-3 text-destructive" />
+            Error
+          </Badge>
+        )
       default:
-        return <Badge variant="outline">{status}</Badge>
+        // Fallback for unexpected status values
+        return <Badge variant="secondary">{status}</Badge>
     }
   }
 
@@ -141,56 +108,76 @@ export function JobsTable() {
             <TableHead>Customer</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Date</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
+            <TableHead className="text-right">Amount</TableHead> {/* Keep Amount column header for layout */}
             <TableHead className="w-[50px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {jobs.map((job) => (
-            <TableRow key={job.id}>
+          {isLoading ? (
+            <TableRow>
+              <TableCell colSpan={7} className="h-24 text-center">
+                <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+                <div>Loading jobs...</div>
+              </TableCell>
+            </TableRow>
+          ) : error ? (
+             <TableRow>
+              <TableCell colSpan={7} className="h-24 text-center text-red-500">
+                {error}
+              </TableCell>
+            </TableRow>
+          ) : jobs.length === 0 ? (
+             <TableRow>
+              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                No jobs found.
+              </TableCell>
+            </TableRow>
+          ) : (
+            jobs.map((job) => (
+            <TableRow key={job.internalId}> {/* Use internalId as key */}
               <TableCell className="font-medium">
-                <Link to={`/jobs/${job.id}`} className="hover:underline">
-                  {job.id}
+                 {/* Link using internalId */}
+                <Link to={`/jobs/${job.internalId}`} className="hover:underline">
+                  {job.businessCentralJobId} {/* Display BC Job ID */}
                 </Link>
               </TableCell>
               <TableCell>
-                <div>{job.title}</div>
-                {job.issues && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {job.issues.map((issue, i) => (
-                      <Badge key={i} variant="destructive" className="text-xs">
-                        {issue}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+                <div>{job.jobTitle || 'N/A'}</div> {/* Use jobTitle */}
+                 {/* Issues are not in JobSummaryDTO, remove this section */}
               </TableCell>
-              <TableCell>{job.customer}</TableCell>
+              <TableCell>{job.customerName || 'N/A'}</TableCell> {/* Use customerName */}
               <TableCell>{getStatusBadge(job.status)}</TableCell>
-              <TableCell>{job.date}</TableCell>
-              <TableCell className="text-right">{job.amount}</TableCell>
+              <TableCell>
+                {/* Format the date */}
+                {job.lastProcessedAt ? format(new Date(job.lastProcessedAt), 'PP') : 'N/A'}
+              </TableCell>
+              <TableCell className="text-right">
+                 {/* Amount is not in JobSummaryDTO, maybe remove or show placeholder */}
+                 -
+              </TableCell>
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon">
                       <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Open menu</span>
+                      <span className="sr-only">Open menu for {job.businessCentralJobId}</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild>
-                      <Link to={`/jobs/${job.id}`}>View details</Link>
+                       {/* Link using internalId */}
+                      <Link to={`/jobs/${job.internalId}`}>View details</Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem>Export job</DropdownMenuItem>
-                    <DropdownMenuItem>Print report</DropdownMenuItem>
+                    {/* Add other actions if needed */}
+                    {/* <DropdownMenuItem>Export job</DropdownMenuItem> */}
+                    {/* <DropdownMenuItem>Print report</DropdownMenuItem> */}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
             </TableRow>
-          ))}
+          )))}
         </TableBody>
       </Table>
     </div>
   )
 }
-

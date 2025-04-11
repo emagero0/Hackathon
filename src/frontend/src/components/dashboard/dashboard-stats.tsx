@@ -1,37 +1,82 @@
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card"
 import { AlertTriangle, CheckCircle, Clock, FileText } from "lucide-react"
+import { getDashboardStats } from "../../lib/api"
 
 export function DashboardStats() {
-    const stats = [
+    const [stats, setStats] = useState([
         {
             title: "Total Jobs",
-            value: "1,284",
+            value: "Loading...",
             icon: FileText,
-            description: "+12% from last month",
-            trend: "up",
+            description: "",
+            trend: "neutral",
         },
         {
             title: "Verified",
-            value: "942",
+            value: "Loading...",
             icon: CheckCircle,
-            description: "73% success rate",
-            trend: "up",
+            description: "",
+            trend: "neutral",
         },
         {
             title: "Flagged",
-            value: "128",
+            value: "Loading...",
             icon: AlertTriangle,
-            description: "10% of total jobs",
-            trend: "down",
+            description: "",
+            trend: "neutral",
         },
         {
             title: "Pending",
-            value: "214",
+            value: "Loading...",
             icon: Clock,
-            description: "17% of total jobs",
+            description: "",
             trend: "neutral",
         },
-    ]
+    ])
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const data = await getDashboardStats();
+                setStats([
+                    {
+                        title: "Total Jobs",
+                        value: data.totalJobs.toString(),
+                        icon: FileText,
+                        description: "",
+                        trend: "neutral",
+                    },
+                    {
+                        title: "Verified",
+                        value: data.verifiedJobs.toString(),
+                        icon: CheckCircle,
+                        description: `${data.verifiedPercentage.toFixed(1)}%`,
+                        trend: "up",
+                    },
+                    {
+                        title: "Flagged",
+                        value: data.flaggedJobs.toString(),
+                        icon: AlertTriangle,
+                        description: `${data.flaggedPercentage.toFixed(1)}%`,
+                        trend: "down",
+                    },
+                    {
+                        title: "Pending",
+                        value: data.pendingJobs.toString(),
+                        icon: Clock,
+                        description: `${data.pendingPercentage.toFixed(1)}%`,
+                        trend: "neutral",
+                    },
+                ]);
+            } catch (error) {
+                console.error("Failed to fetch dashboard stats:", error);
+                // Handle error appropriately (e.g., display an error message)
+            }
+        };
+
+        fetchStats();
+    }, []);
 
     return (
         <>
@@ -70,4 +115,3 @@ export function DashboardStats() {
         </>
     )
 }
-

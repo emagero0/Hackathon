@@ -6,21 +6,101 @@ import { Textarea } from "../../components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "../../components/ui/radio-group"
 import { Label } from "../../components/ui/label"
 import { useState } from "react"
-import { CheckCircle, ThumbsDown, ThumbsUp } from "lucide-react"
+import { CheckCircle, ThumbsDown, ThumbsUp, Loader2 } from "lucide-react" // Added Loader2
+import { submitFeedback } from "../../lib/api" // Added import
+// import { useToast } from "../../components/ui/use-toast" // Removed toast import for now
 
-interface JobFeedbackProps {
-  jobId: string
+// Re-define interface for JobDetailData (matching parent component)
+// Ideally, this should be imported from a shared types file
+interface DiscrepancyDTO {
+  discrepancyType: string;
+  fieldName: string | null;
+  expectedValue: string | null;
+  actualValue: string | null;
+  description: string;
 }
 
-export function JobFeedback({ jobId }: JobFeedbackProps) {
+interface VerificationDetailsDTO {
+  verificationTimestamp: string;
+  aiConfidenceScore: number | null;
+  rawAiResponse: string | null;
+  discrepancies: DiscrepancyDTO[];
+}
+
+interface JobDetailData {
+  internalId: number;
+  businessCentralJobId: string;
+  jobTitle: string;
+  customerName: string;
+  status: 'PENDING' | 'PROCESSING' | 'VERIFIED' | 'FLAGGED' | 'ERROR';
+  lastProcessedAt: string;
+  verificationDetails: VerificationDetailsDTO | null;
+}
+
+
+interface JobFeedbackProps {
+   jobData: JobDetailData | null; // Accept the full job data object
+}
+
+export function JobFeedback({ jobData }: JobFeedbackProps) {
   const [feedbackType, setFeedbackType] = useState<string>("accurate")
   const [comments, setComments] = useState<string>("")
   const [submitted, setSubmitted] = useState<boolean>(false)
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  // const { toast } = useToast() // Removed toast initialization
 
-  const handleSubmit = () => {
-    // This would normally send the feedback to the server
-    console.log({ jobId, feedbackType, comments })
-    setSubmitted(true)
+  const handleSubmit = async () => {
+    if (!jobData) {
+      setError("Job data is not available to submit feedback.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    const feedbackPayload = {
+      jobId: jobData.internalId, // Use internal ID
+      isCorrect: feedbackType === "accurate",
+      feedbackText: comments,
+      userIdentifier: "frontend-user" // Placeholder - replace with actual user ID/name later
+    };
+
+    try {
+      await submitFeedback(feedbackPayload);
+      setSubmitted(true);
+      // Optionally clear comments after successful submission
+      // setComments("");
+      // toast({ // Removed toast call
+      //   title: "Feedback Submitted",
+      //   description: "Thank you for your input!",
+      // });
+      console.log("Feedback submitted successfully."); // Log success instead
+    } catch (err) {
+      console.error("Failed to submit feedback:", err);
+      setError("Failed to submit feedback. Please try again.");
+      // toast({ // Removed toast call
+      //   title: "Submission Failed",
+      //   description: "Could not submit feedback. Please try again later.",
+      //   variant: "destructive",
+      // });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Handle null jobData case
+  if (!jobData) {
+     return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Provide Feedback</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">Job data not available.</p>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (submitted) {
@@ -34,13 +114,14 @@ export function JobFeedback({ jobId }: JobFeedbackProps) {
             <div className="rounded-full bg-green-100 p-3 dark:bg-green-900">
               <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
             </div>
-            <h3 className="mt-4 text-lg font-medium">Thank you for your feedback!</h3>
+            <h3 className="mt-4 text-lg font-medium">Feedback Submitted!</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Your input helps us improve our AI verification system.
+              Thank you! Your input helps us improve the AI verification system.
             </p>
-            <Button className="mt-4" variant="outline" onClick={() => setSubmitted(false)}>
-              Provide Additional Feedback
-            </Button>
+            {/* Keep button to allow resubmission or hide */}
+            {/* <Button className="mt-4" variant="outline" onClick={() => setSubmitted(false)}>
+              Submit Again
+            </Button> */}
           </div>
         </CardContent>
       </Card>
@@ -84,10 +165,19 @@ export function JobFeedback({ jobId }: JobFeedbackProps) {
             />
           </div>
 
-          <Button onClick={handleSubmit}>Submit Feedback</Button>
+          {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              "Submit Feedback"
+            )}
+          </Button>
         </div>
       </CardContent>
     </Card>
   )
 }
-

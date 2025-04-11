@@ -1,34 +1,58 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card"
 import { Badge } from "../../components/ui/badge"
 import { AlertTriangle, CheckCircle, Clock } from "lucide-react"
+import { format } from 'date-fns' // Added import
 
-interface JobDetailsProps {
-  jobId: string
+// Re-define interface for JobDetailData (matching parent component)
+// Ideally, this should be imported from a shared types file
+interface DiscrepancyDTO {
+  discrepancyType: string;
+  fieldName: string | null;
+  expectedValue: string | null;
+  actualValue: string | null;
+  description: string;
 }
 
-export function JobDetails({ jobId }: JobDetailsProps) {
-  // This would normally fetch data based on the jobId
-  const job = {
-    id: jobId,
-    title: "Invoice #INV-9012",
-    customer: "Globex Inc",
-    status: "flagged",
-    date: "Apr 2, 2023",
-    amount: "$8,750.00",
-    contactName: "Jane Smith",
-    contactEmail: "jane.smith@globex.com",
-    contactPhone: "+1 (555) 123-4567",
-    reference: "REF-2023-0456",
-    department: "Sales",
-    assignedTo: "John Doe",
-    createdAt: "Apr 2, 2023 09:45 AM",
-    updatedAt: "Apr 2, 2023 10:30 AM",
-    issues: ["Amount mismatch", "Missing signature"],
+interface VerificationDetailsDTO {
+  verificationTimestamp: string;
+  aiConfidenceScore: number | null;
+  rawAiResponse: string | null;
+  discrepancies: DiscrepancyDTO[];
+}
+
+interface JobDetailData {
+  internalId: number;
+  businessCentralJobId: string;
+  jobTitle: string;
+  customerName: string;
+  status: 'PENDING' | 'PROCESSING' | 'VERIFIED' | 'FLAGGED' | 'ERROR';
+  lastProcessedAt: string;
+  verificationDetails: VerificationDetailsDTO | null;
+}
+
+interface JobDetailsProps {
+  jobData: JobDetailData | null; // Accept the full job data object
+}
+
+export function JobDetails({ jobData }: JobDetailsProps) {
+
+  // Handle null jobData case (e.g., during initial load or if not found)
+  if (!jobData) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Job Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">Job data not available.</p>
+        </CardContent>
+      </Card>
+    );
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: JobDetailData['status']) => { // Use JobDetailData status type
     switch (status) {
-      case "verified":
+      case "VERIFIED": // Match backend enum
         return (
           <Badge
             variant="outline"
@@ -38,7 +62,7 @@ export function JobDetails({ jobId }: JobDetailsProps) {
             Verified
           </Badge>
         )
-      case "flagged":
+      case "FLAGGED": // Match backend enum
         return (
           <Badge
             variant="outline"
@@ -48,7 +72,8 @@ export function JobDetails({ jobId }: JobDetailsProps) {
             Flagged
           </Badge>
         )
-      case "pending":
+      case "PENDING": // Match backend enum
+      case "PROCESSING": // Group PROCESSING with PENDING visually
         return (
           <Badge
             variant="outline"
@@ -58,8 +83,19 @@ export function JobDetails({ jobId }: JobDetailsProps) {
             Pending
           </Badge>
         )
+      case "ERROR": // Added Error status
+        return (
+          <Badge
+            variant="outline"
+            className="bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
+          >
+            <AlertTriangle className="mr-1 h-3 w-3 text-destructive" />
+            Error
+          </Badge>
+        )
       default:
-        return <Badge variant="outline">{status}</Badge>
+        // Fallback for unexpected status values
+        return <Badge variant="secondary">{status}</Badge>
     }
   }
 
@@ -68,24 +104,38 @@ export function JobDetails({ jobId }: JobDetailsProps) {
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <span>Job Details</span>
-          {getStatusBadge(job.status)}
+          {getStatusBadge(jobData.status)}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-sm font-medium text-muted-foreground">Job ID</div>
-              <div>{job.id}</div>
+              <div className="text-sm font-medium text-muted-foreground">BC Job ID</div>
+              <div>{jobData.businessCentralJobId || 'N/A'}</div>
+            </div>
+             <div>
+              <div className="text-sm font-medium text-muted-foreground">Internal ID</div>
+              <div>{jobData.internalId}</div>
             </div>
             <div>
               <div className="text-sm font-medium text-muted-foreground">Title</div>
-              <div>{job.title}</div>
+              <div>{jobData.jobTitle || 'N/A'}</div>
             </div>
             <div>
               <div className="text-sm font-medium text-muted-foreground">Customer</div>
-              <div>{job.customer}</div>
+              <div>{jobData.customerName || 'N/A'}</div>
             </div>
+             <div>
+              <div className="text-sm font-medium text-muted-foreground">Last Processed</div>
+              <div>
+                {jobData.lastProcessedAt
+                  ? format(new Date(jobData.lastProcessedAt), 'PPpp')
+                  : 'N/A'}
+              </div>
+            </div>
+             {/* Remove fields not present in JobDetailData */}
+            {/*
             <div>
               <div className="text-sm font-medium text-muted-foreground">Amount</div>
               <div>{job.amount}</div>
@@ -106,41 +156,24 @@ export function JobDetails({ jobId }: JobDetailsProps) {
               <div className="text-sm font-medium text-muted-foreground">Created</div>
               <div>{job.createdAt}</div>
             </div>
+            */}
           </div>
 
+           {/* Remove Contact Information section */}
+          {/*
           <div className="pt-4 border-t">
-            <div className="text-sm font-medium mb-2">Contact Information</div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Name</div>
-                <div>{job.contactName}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Email</div>
-                <div>{job.contactEmail}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Phone</div>
-                <div>{job.contactPhone}</div>
-              </div>
-            </div>
+            ...
           </div>
+          */}
 
+           {/* Remove Issues section (issues are now part of VerificationResults) */}
+           {/*
           {job.issues && (
-            <div className="pt-4 border-t">
-              <div className="text-sm font-medium mb-2 text-red-500">Flagged Issues</div>
-              <div className="space-y-2">
-                {job.issues.map((issue, i) => (
-                  <Badge key={i} variant="destructive" className="mr-2">
-                    {issue}
-                  </Badge>
-                ))}
-              </div>
-            </div>
+            ...
           )}
+          */}
         </div>
       </CardContent>
     </Card>
   )
 }
-

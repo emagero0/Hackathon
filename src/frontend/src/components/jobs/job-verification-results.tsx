@@ -2,33 +2,61 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Badge } from "../../components/ui/badge"
 import { AlertTriangle, CheckCircle, Clock } from "lucide-react"
 import { Progress } from "../../components/ui/progress"
+import { format } from 'date-fns' // Added import
 
-interface JobVerificationResultsProps {
-  jobId: string
+// Re-define interface for JobDetailData (matching parent component)
+// Ideally, this should be imported from a shared types file
+interface DiscrepancyDTO {
+  discrepancyType: string;
+  fieldName: string | null;
+  expectedValue: string | null;
+  actualValue: string | null;
+  description: string;
 }
 
-export function JobVerificationResults({ jobId }: JobVerificationResultsProps) {
-  console.log(jobId)
-  // This would normally fetch data based on the jobId
-  const results = {
-    status: "flagged",
-    completedAt: "Apr 2, 2023 10:30 AM",
-    duration: "45 seconds",
-    confidence: 85,
-    matches: [
-      { field: "Customer Name", expected: "Globex Inc", actual: "Globex Inc", match: true },
-      { field: "Invoice Number", expected: "INV-9012", actual: "INV-9012", match: true },
-      { field: "Date", expected: "Apr 1, 2023", actual: "Apr 1, 2023", match: true },
-      { field: "Amount", expected: "$8,750.00", actual: "$8,950.00", match: false },
-      { field: "Tax", expected: "$875.00", actual: "$895.00", match: false },
-      { field: "Total", expected: "$9,625.00", actual: "$9,845.00", match: false },
-      { field: "Signature", expected: "Present", actual: "Missing", match: false },
-    ],
+interface VerificationDetailsDTO {
+  verificationTimestamp: string;
+  aiConfidenceScore: number | null;
+  rawAiResponse: string | null;
+  discrepancies: DiscrepancyDTO[];
+}
+
+interface JobDetailData {
+  internalId: number;
+  businessCentralJobId: string;
+  jobTitle: string;
+  customerName: string;
+  status: 'PENDING' | 'PROCESSING' | 'VERIFIED' | 'FLAGGED' | 'ERROR';
+  lastProcessedAt: string;
+  verificationDetails: VerificationDetailsDTO | null;
+}
+
+
+interface JobVerificationResultsProps {
+   jobData: JobDetailData | null; // Accept the full job data object
+}
+
+export function JobVerificationResults({ jobData }: JobVerificationResultsProps) {
+
+  // Handle null jobData or missing verificationDetails
+  if (!jobData || !jobData.verificationDetails) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Verification Results</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">Verification results not available.</p>
+        </CardContent>
+      </Card>
+    );
   }
 
-  const getStatusBadge = (status: string) => {
+  const results = jobData.verificationDetails; // Use data from prop
+
+  const getStatusBadge = (status: JobDetailData['status']) => { // Use JobDetailData status type
     switch (status) {
-      case "verified":
+      case "VERIFIED": // Match backend enum
         return (
           <Badge
             variant="outline"
@@ -38,7 +66,7 @@ export function JobVerificationResults({ jobId }: JobVerificationResultsProps) {
             Verified
           </Badge>
         )
-      case "flagged":
+      case "FLAGGED": // Match backend enum
         return (
           <Badge
             variant="outline"
@@ -48,7 +76,8 @@ export function JobVerificationResults({ jobId }: JobVerificationResultsProps) {
             Flagged
           </Badge>
         )
-      case "pending":
+      case "PENDING": // Match backend enum
+      case "PROCESSING": // Group PROCESSING with PENDING visually
         return (
           <Badge
             variant="outline"
@@ -58,8 +87,19 @@ export function JobVerificationResults({ jobId }: JobVerificationResultsProps) {
             Pending
           </Badge>
         )
+      case "ERROR": // Added Error status
+        return (
+          <Badge
+            variant="outline"
+            className="bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
+          >
+            <AlertTriangle className="mr-1 h-3 w-3 text-destructive" />
+            Error
+          </Badge>
+        )
       default:
-        return <Badge variant="outline">{status}</Badge>
+        // Fallback for unexpected status values
+        return <Badge variant="secondary">{status}</Badge>
     }
   }
 
@@ -68,72 +108,84 @@ export function JobVerificationResults({ jobId }: JobVerificationResultsProps) {
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <span>Verification Results</span>
-          {getStatusBadge(results.status)}
+          {/* Use the overall job status */}
+          {getStatusBadge(jobData.status)}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4"> {/* Adjusted grid for smaller screens */}
             <div>
-              <div className="text-sm font-medium text-muted-foreground">Completed At</div>
-              <div>{results.completedAt}</div>
+              <div className="text-sm font-medium text-muted-foreground">Verification Time</div>
+              <div>
+                {results.verificationTimestamp
+                  ? format(new Date(results.verificationTimestamp), 'PPpp')
+                  : 'N/A'}
+              </div>
             </div>
+            {/* Duration is not available from backend DTO */}
+            {/*
             <div>
               <div className="text-sm font-medium text-muted-foreground">Duration</div>
               <div>{results.duration}</div>
             </div>
+            */}
             <div>
-              <div className="text-sm font-medium text-muted-foreground">Confidence</div>
-              <div className="flex items-center gap-2">
-                <span>{results.confidence}%</span>
-                <Progress value={results.confidence} className="h-2 w-20" />
-              </div>
+              <div className="text-sm font-medium text-muted-foreground">AI Confidence</div>
+              {results.aiConfidenceScore !== null ? (
+                <div className="flex items-center gap-2">
+                  <span>{(results.aiConfidenceScore * 100).toFixed(0)}%</span>
+                  <Progress value={results.aiConfidenceScore * 100} className="h-2 w-20" />
+                </div>
+              ) : (
+                <div>N/A</div>
+              )}
             </div>
           </div>
 
-          <div className="rounded-lg border">
-            <div className="bg-muted px-4 py-2 rounded-t-lg grid grid-cols-3 font-medium">
-              <div>Field</div>
-              <div>Expected</div>
-              <div>Actual</div>
-            </div>
-            <div className="divide-y">
-              {results.matches.map((match, i) => (
-                <div
-                  key={i}
-                  className={`px-4 py-3 grid grid-cols-3 ${!match.match ? "bg-red-50 dark:bg-red-950/30" : ""}`}
-                >
-                  <div>{match.field}</div>
-                  <div>{match.expected}</div>
-                  <div className="flex items-center gap-2">
-                    {match.actual}
-                    {match.match ? (
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <AlertTriangle className="h-4 w-4 text-red-500" />
+          {/* Display Discrepancies */}
+          {results.discrepancies && results.discrepancies.length > 0 && (
+            <div className="rounded-lg border">
+              <div className="bg-muted px-4 py-2 rounded-t-lg font-medium text-red-600 dark:text-red-400">
+                Detected Discrepancies
+              </div>
+              <div className="divide-y">
+                {results.discrepancies.map((discrepancy, i) => (
+                  <div key={i} className="px-4 py-3 space-y-1">
+                    <div className="flex items-center gap-2 font-medium">
+                       <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                       <span>{discrepancy.discrepancyType || 'Unknown Issue'}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground pl-6">
+                      {discrepancy.description || 'No details provided.'}
+                    </p>
+                    {/* Optionally display field, expected, actual if available */}
+                    {discrepancy.fieldName && (
+                       <p className="text-xs text-muted-foreground pl-6">Field: {discrepancy.fieldName}</p>
+                    )}
+                     {discrepancy.expectedValue && (
+                       <p className="text-xs text-muted-foreground pl-6">Expected: {discrepancy.expectedValue}</p>
+                    )}
+                     {discrepancy.actualValue && (
+                       <p className="text-xs text-muted-foreground pl-6">Actual: {discrepancy.actualValue}</p>
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-lg border p-4 bg-amber-50 dark:bg-amber-950/30">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
-              <div>
-                <div className="font-medium">AI Analysis</div>
-                <p className="text-sm mt-1">
-                  The document appears to have discrepancies in the financial amounts. The invoice total is calculated
-                  incorrectly based on the provided amounts. Additionally, the required signature is missing from the
-                  document, which violates company policy for invoices exceeding $5,000.
-                </p>
+                ))}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Display Raw AI Response */}
+          {results.rawAiResponse && (
+            <div className="rounded-lg border p-4 bg-muted/50 dark:bg-muted/20">
+               <div className="font-medium mb-2">AI Analysis Notes</div>
+               <p className="text-sm whitespace-pre-wrap font-mono text-muted-foreground">
+                 {results.rawAiResponse}
+               </p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
   )
 }
-
