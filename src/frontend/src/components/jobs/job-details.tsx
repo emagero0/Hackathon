@@ -5,20 +5,20 @@ import { format } from 'date-fns' // Added import
 
 // Re-define interface for JobDetailData (matching parent component)
 // Ideally, this should be imported from a shared types file
-interface DiscrepancyDTO {
-  discrepancyType: string;
-  fieldName: string | null;
-  expectedValue: string | null;
-  actualValue: string | null;
-  description: string;
-}
+// interface DiscrepancyDTO {
+//   discrepancyType: string;
+//   fieldName: string | null;
+//   expectedValue: string | null;
+//   actualValue: string | null;
+//   description: string;
+// }
 
-interface VerificationDetailsDTO {
-  verificationTimestamp: string;
-  aiConfidenceScore: number | null;
-  rawAiResponse: string | null;
-  discrepancies: DiscrepancyDTO[];
-}
+// interface VerificationDetailsDTO {
+//   verificationTimestamp: string;
+//   aiConfidenceScore: number | null;
+//   rawAiResponse: string | null;
+//   discrepancies: DiscrepancyDTO[];
+// }
 
 interface JobDetailData {
   internalId: number;
@@ -26,8 +26,8 @@ interface JobDetailData {
   jobTitle: string;
   customerName: string;
   status: 'PENDING' | 'PROCESSING' | 'VERIFIED' | 'FLAGGED' | 'ERROR';
-  lastProcessedAt: string;
-  verificationDetails: VerificationDetailsDTO | null;
+  lastProcessedAt: string | null; // Allow null
+  // verificationDetails: VerificationDetailsDTO | null; // Removed - This component doesn't display verification details directly
 }
 
 interface JobDetailsProps {

@@ -1,14 +1,16 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs"
-import { Badge } from "../../components/ui/badge" // Keep Badge if needed elsewhere, though JobCard doesn't use it now
-import { Button } from "../../components/ui/button"
-import { AlertTriangle, CheckCircle, Clock, Eye, Plus, Search } from "lucide-react"
-import { Link } from "react-router-dom"
-import { Input } from "../../components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select"
-import { useState, useEffect } from "react" // Import useEffect
-import { getJobs } from "../../lib/api" // Import the API function
-import { formatDistanceToNow } from 'date-fns' // Import date-fns
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { Button } from "../../components/ui/button";
+import { AlertTriangle, CheckCircle, Clock, Eye, PlusCircle, Search, Loader2 } from "lucide-react"; // Changed Plus to PlusCircle, Added Loader2
+import { Link } from "react-router-dom";
+import { Input } from "../../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { useState, useEffect } from "react";
+import { getJobs, requestVerification } from "../../lib/api"; // Import requestVerification
+import { formatDistanceToNow } from 'date-fns';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "../../components/ui/dialog"; // Import Dialog components
+import { Label } from "../../components/ui/label"; // Import Label
+import { toast } from "sonner"; // Import toast
 
 // Define an interface matching the backend JobSummaryDTO
 interface JobSummary {
@@ -21,17 +23,23 @@ interface JobSummary {
 }
 
 // Define an interface for the Category data structure (can be removed if filtering is done differently)
-interface Category {
-  value: string;
-  label: string;
-}
+// interface Category {
+//   value: string;
+//   label: string;
+// }
 
 export function JobsOverview() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("all") // Keep category filtering for now, might remove later
-  const [jobs, setJobs] = useState<JobSummary[]>([]) // State for fetched jobs
-  const [isLoading, setIsLoading] = useState(true) // Loading state
-  const [error, setError] = useState<string | null>(null) // Error state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [jobs, setJobs] = useState<JobSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // State for the verification dialog
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [jobNoToVerify, setJobNoToVerify] = useState("");
+  const [isTriggering, setIsTriggering] = useState(false);
+
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -56,7 +64,26 @@ export function JobsOverview() {
     };
 
     fetchJobs();
-  }, []); // Empty dependency array means this runs once on mount
+  }, []);
+
+  const handleTriggerVerification = async () => {
+    if (!jobNoToVerify.trim()) {
+      toast.error("Please enter a Job Number.");
+      return;
+    }
+    setIsTriggering(true);
+    try {
+      const response = await requestVerification(jobNoToVerify.trim());
+      toast.success(`Verification requested (ID: ${response.verificationRequestId}) for Job ${jobNoToVerify.trim()}.`);
+      setJobNoToVerify(""); // Clear input
+      setIsDialogOpen(false); // Close dialog
+    } catch (error) {
+      console.error("Failed to trigger verification:", error);
+      toast.error("Failed to initiate verification. Please try again.");
+    } finally {
+      setIsTriggering(false);
+    }
+  };
 
   // Keep categories for the dropdown for now
   const categories = [
@@ -97,13 +124,48 @@ export function JobsOverview() {
             <CardTitle>Recent Jobs</CardTitle>
             <CardDescription>Overview of recently processed jobs and their verification status</CardDescription>
           </div>
-          {/* Keep Add Job button for now, though functionality might be deferred */}
-          <Button asChild>
-            <Link to="/jobs/new">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Job
-            </Link>
-          </Button>
+          {/* Changed Button to trigger Dialog */}
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Verify Job
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Verify New Job</DialogTitle>
+                <DialogDescription>
+                  Enter the Business Central Job Number to start the document verification process.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="jobNoDash" className="text-right"> {/* Changed id */}
+                    Job No
+                  </Label>
+                  <Input
+                    id="jobNoDash" // Changed id
+                    value={jobNoToVerify}
+                    onChange={(e) => setJobNoToVerify(e.target.value)}
+                    className="col-span-3"
+                    placeholder="e.g., J069023"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                 <DialogClose asChild>
+                   <Button type="button" variant="outline" disabled={isTriggering}>
+                     Cancel
+                   </Button>
+                 </DialogClose>
+                <Button type="button" onClick={handleTriggerVerification} disabled={isTriggering}>
+                  {isTriggering && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Start Verification
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </CardHeader>
       <CardContent>

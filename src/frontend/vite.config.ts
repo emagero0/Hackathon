@@ -7,7 +7,12 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  server: { // Add server configuration
+  resolve: {
+    alias: {
+      "@": "/src", // Relative to project root
+    },
+  },
+  server: {
     proxy: {
       // Proxy API requests starting with /api to the backend server
       '/api': {
@@ -19,4 +24,5 @@ export default defineConfig({
       },
     },
   },
+  // Removed the extra closing brace from here
 });

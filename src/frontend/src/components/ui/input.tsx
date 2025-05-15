@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "../../lib/utils"
+import { cn } from "../../lib/utils" // Ensure this path is correct or utils.ts is copied
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (

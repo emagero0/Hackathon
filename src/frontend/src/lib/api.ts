@@ -52,6 +52,66 @@ export const getActivityLog = async (page: number = 0, size: number = 20) => {
   }
 };
 
+// Interface for the response from GET /api/jobs/{jobNo}/latest-verification
+// Matches LatestVerificationResponseDTO on backend
+interface LatestVerificationResponse {
+  verificationRequestId: string;
+  jobNo: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'; // Matches VerificationStatus enum
+  requestTimestamp: string; // ISO date string
+  resultTimestamp: string | null; // ISO date string or null
+  discrepancies: string[];
+}
+
+
+// Renamed function to request verification
+export const requestVerification = async (jobNo: string): Promise<{ verificationRequestId: string }> => {
+  try {
+    // Backend expects an object with jobNo property
+    const response = await axios.post(`${API_BASE_URL}/verifications`, { jobNo }); // Path is correct now
+    // Backend returns { verificationRequestId: "..." } and 202 Accepted
+    return response.data; // Return the response body containing the ID
+  } catch (error) {
+    console.error(`Error requesting verification for Job No ${jobNo}:`, error);
+    throw error;
+  }
+};
+
+// New function to fetch the latest verification result for a job
+export const getLatestVerificationForJob = async (jobNo: string): Promise<LatestVerificationResponse | null> => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/verifications/job/${jobNo}/latest`); // Corrected endpoint path
+    return response.data;
+  } catch (error: any) { // Use 'any' or 'unknown' and check type
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      console.log(`No verification result found for Job No ${jobNo}.`);
+      return null; // Return null if not found
+    }
+    console.error(`Error fetching latest verification result for Job No ${jobNo}:`, error);
+    throw error; // Re-throw other errors
+  }
+};
+
+// Interface for daily stats DTO from backend
+interface DailyVerificationStat {
+  date: string; // e.g., "Mon", "Tue" or "YYYY-MM-DD"
+  verified: number;
+  flagged: number;
+  pendingOrError: number;
+}
+
+// New function to fetch daily verification stats
+export const getDailyVerificationStats = async (): Promise<DailyVerificationStat[]> => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/dashboard/daily-stats`);
+    return response.data || []; // Return data or empty array
+  } catch (error) {
+    console.error('Error fetching daily verification stats:', error);
+    throw error;
+  }
+};
+
+
 export const getActivityLogForJob = async (jobId: string) => {
   try {
     const response = await axios.get(`${API_BASE_URL}/activity-log/job/${jobId}`);

@@ -1,4 +1,16 @@
-import { BarChart3, FileText, Home, Settings, Bell, Search, LogOut, PanelLeft, } from "lucide-react"
+import {
+  BarChart3,
+  FileText,
+  Home,
+  Settings,
+  Bell,
+  Search,
+  LogOut,
+  PanelLeft,
+  Users,
+  Settings2,
+  ClipboardCheck, // Added icon
+} from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -10,20 +22,29 @@ import {
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,
-} from "../components/ui/sidebar"
-import { useLocation, Link } from "react-router-dom"
-import { ModeToggle } from "../components/mode-toggle"
-import { Button } from "../components/ui/button"
-import { Input } from "../components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
+} from './ui/sidebar';
+import { useLocation, Link } from 'react-router-dom';
+import { ModeToggle } from './mode-toggle';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
-export function AppSidebar() {
-  const location = useLocation()
-  const { state, toggleSidebar } = useSidebar()
+interface AppSidebarProps {
+  userRole: string | null;
+  onLogout: () => void;
+}
+
+export function AppSidebar({ userRole, onLogout }: AppSidebarProps) {
+  const location = useLocation();
+  const { state, toggleSidebar } = useSidebar();
+
+  // --- DEBUGGING REMOVED ---
+  // console.log("AppSidebar received userRole:", userRole);
+  // --- END DEBUGGING ---
 
   const isActive = (path: string) => {
-    return location.pathname === path
-  }
+    return location.pathname === path;
+  };
 
   return (
     <>
@@ -79,6 +100,18 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </SidebarMenuItem>
 
+            {/* Added Job Verification link for verification_manager */}
+            {userRole === 'verification_manager' && (
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/job-verification")}>
+                  <Link to="/job-verification">
+                    <ClipboardCheck className="h-4 w-4" />
+                    <span>Job Verification</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive("/analytics")}>
                 <Link to="/analytics">
@@ -96,6 +129,28 @@ export function AppSidebar() {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
+            {userRole === 'admin' && (
+              <>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive('/users')}>
+                    <Link to="/users">
+                      <Users className="h-4 w-4" />
+                      <span>Users</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive('/configs')}>
+                    <Link to="/configs">
+                      <Settings2 className="h-4 w-4" />
+                      <span>Configs</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </>
+            )}
           </SidebarMenu>
         </SidebarContent>
 
@@ -108,7 +163,7 @@ export function AppSidebar() {
               <span className="sr-only">Notifications</span>
             </Button>
             <ModeToggle />
-            <Button variant="outline" size="icon">
+            <Button variant="outline" size="icon" onClick={onLogout}>
               <LogOut className="h-4 w-4" />
               <span className="sr-only">Log out</span>
             </Button>
@@ -117,15 +172,15 @@ export function AppSidebar() {
           <div className="flex items-center gap-3">
             <Avatar>
               <AvatarImage src="/placeholder.svg?height=40&width=40" alt="User" />
-              <AvatarFallback>JD</AvatarFallback>
+              <AvatarFallback>JD</AvatarFallback> {/* TODO: Update with actual user initials */}
             </Avatar>
             <div className="flex flex-col">
-              <span className="text-sm font-medium">John Doe</span>
-              <span className="text-xs text-muted-foreground">Verification Manager</span>
+              <span className="text-sm font-medium">John Doe</span> {/* TODO: Update with actual user name */}
+              <span className="text-xs text-muted-foreground">{userRole?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'User'}</span> {/* Display formatted role */}
             </div>
           </div>
         </SidebarFooter>
       </Sidebar>
     </>
-  )
+  );
 }

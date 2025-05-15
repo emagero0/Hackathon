@@ -1,13 +1,14 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar"
-import { Badge } from "../../components/ui/badge" // Keep Badge if needed
-import { AlertTriangle, CheckCircle, Clock, FileText, User, MessageSquare, UploadCloud, DatabaseZap, ServerCrash, Loader2 } from "lucide-react" // Added icons
-import { useState, useEffect } from "react" // Added imports
-import { getActivityLog } from "../../lib/api" // Added import
-import { formatDistanceToNow } from 'date-fns' // Added import
-import { Link } from "react-router-dom" // Added import
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Avatar, AvatarFallback } from "../../components/ui/avatar";
+import { Button } from "../../components/ui/button"; // Import Button
+import { AlertTriangle, CheckCircle, FileText, MessageSquare, DatabaseZap, RefreshCw } from "lucide-react"; // Added RefreshCw
+import { useState, useEffect, useCallback } from "react"; // Added useCallback
+import { getActivityLog } from "../../lib/api";
+import { formatDistanceToNow } from 'date-fns';
+import { Link } from "react-router-dom"; // Added import
+import { Skeleton } from "../ui/skeleton"; // Import Skeleton
 
 // Define interface matching backend ActivityLogDTO
 interface ActivityLogData {
@@ -24,50 +25,47 @@ export function RecentActivity() {
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
-    useEffect(() => {
-      const fetchActivities = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-          // Fetch the first page of activities (e.g., 5 items)
-          const data = await getActivityLog(0, 5); // Fetch page 0, size 5
-          // Ensure data.content exists and is an array before setting state
-          setActivities(data && Array.isArray(data.content) ? data.content : []);
-        } catch (err) {
-          setError("Failed to fetch recent activity.");
-          console.error(err);
-        } finally {
-          setIsLoading(false);
-        }
-      };
+    // Wrap fetch logic in useCallback so the function identity is stable
+    const fetchActivities = useCallback(async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Fetch the first page of activities (e.g., 5 items)
+        const data = await getActivityLog(0, 5); // Fetch page 0, size 5
+        console.log("Fetched Activity Log Data:", data); // Keep console log for debugging
+        // Ensure data.content exists and is an array before setting state
+        setActivities(data && Array.isArray(data.content) ? data.content : []);
+      } catch (err) {
+        setError("Failed to fetch recent activity.");
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    }, []); // Empty dependency array for useCallback
 
-      fetchActivities();
-    }, []);
+    useEffect(() => {
+      fetchActivities(); // Fetch on initial mount
+    }, [fetchActivities]); // Depend on the memoized fetchActivities function
 
     // Map backend eventType to icons
     const getActionIcon = (eventType: string) => {
         switch (eventType) {
             case "JOB_PROCESSED":
-            case "VERIFIED": // Assuming VERIFIED status might be logged
+                 // Distinguish based on description content if needed, or use a generic icon
+                 // For now, using CheckCircle for any JOB_PROCESSED
                  return <CheckCircle className="h-5 w-5 text-green-500" />
-            case "FLAGGED": // Assuming FLAGGED status might be logged
+            // Removed specific VERIFIED/FLAGGED cases as we use JOB_PROCESSED now
             case "BC_UPDATE_FAILURE":
-            case "ERROR":
+            case "ERROR": // Use the constant from ActivityLogService
                 return <AlertTriangle className="h-5 w-5 text-red-500" />
-            case "PROCESSING": // Assuming PROCESSING status might be logged
-            case "NLP_STARTED":
-            case "OCR_STARTED":
-                return <Clock className="h-5 w-5 text-amber-500" />
+            // Removed specific PROCESSING/NLP/OCR cases
             case "BC_UPDATE_SUCCESS":
-                return <DatabaseZap className="h-5 w-5 text-blue-500" /> // Icon for DB update
+                return <DatabaseZap className="h-5 w-5 text-blue-500" />
             case "FEEDBACK_SUBMITTED":
-                return <MessageSquare className="h-5 w-5 text-purple-500" /> // Icon for feedback
-            case "OCR_COMPLETED":
-            case "NLP_COMPLETED":
-                 return <FileText className="h-5 w-5 text-gray-500" /> // Generic file/doc icon
-            // Add more cases as needed based on ActivityLogService constants
+                return <MessageSquare className="h-5 w-5 text-purple-500" />
+            // Add more specific cases if new event types are added in ActivityLogService
             default:
-                return <FileText className="h-5 w-5 text-muted-foreground" />
+                return <FileText className="h-5 w-5 text-muted-foreground" /> // Default icon
         }
     }
 
@@ -78,14 +76,29 @@ export function RecentActivity() {
 
     return (
         <Card>
-            <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest actions and updates from the verification system</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between"> {/* Added flex layout */}
+                <div>
+                    <CardTitle>Recent Activity</CardTitle>
+                    <CardDescription>Latest actions and updates from the verification system</CardDescription>
+                </div>
+                <Button variant="outline" size="icon" onClick={fetchActivities} disabled={isLoading}>
+                    <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                    <span className="sr-only">Refresh Activity</span>
+                </Button>
             </CardHeader>
             <CardContent>
                  {isLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    // Use Skeleton loaders for better UX
+                    <div className="space-y-8">
+                        {[...Array(3)].map((_, i) => ( // Show 3 skeletons
+                             <div key={i} className="flex">
+                                <Skeleton className="h-10 w-10 rounded-full mr-4" />
+                                <div className="flex-1 space-y-2">
+                                    <Skeleton className="h-4 w-3/4" />
+                                    <Skeleton className="h-3 w-1/2" />
+                                </div>
+                            </div>
+                        ))}
                     </div>
                  ) : error ? (
                     <div className="text-center py-8 text-red-500">{error}</div>
@@ -96,9 +109,7 @@ export function RecentActivity() {
                         {activities.map((activity) => (
                             <div key={activity.id} className="flex">
                                 <div className="relative mr-4">
-                                    {/* Use generic user avatar or initials based on userIdentifier */}
                                     <Avatar>
-                                        {/* <AvatarImage src={activity.user.avatar} alt={activity.user.name} /> */}
                                         <AvatarFallback>
                                             {activity.userIdentifier === "System" ? "AI" :
                                              activity.userIdentifier ? activity.userIdentifier.substring(0, 2).toUpperCase() : "???"}
@@ -121,14 +132,12 @@ export function RecentActivity() {
                                         {activity.relatedJobId && (
                                             <>
                                                 <span>•</span>
-                                                {/* Link to the job detail page */}
                                                 <Link to={`/jobs/${activity.relatedJobId}`} className="hover:underline">
                                                     Job #{activity.relatedJobId}
                                                 </Link>
                                             </>
                                         )}
                                     </div>
-                                    {/* Remove hardcoded issues/feedback display */}
                                 </div>
                             </div>
                         ))}

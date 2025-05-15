@@ -1,8 +1,12 @@
 import * as React from "react"
 import * as SheetPrimitive from "@radix-ui/react-dialog"
-import { XIcon } from "lucide-react"
+import { XIcon } from "lucide-react" // Dependency: Needs lucide-react
 
-import { cn } from "../../lib/utils"
+import { cn } from "../../lib/utils" // Dependency: Copied
+
+// Note: This component relies on specific Tailwind animations/classes being defined:
+// animate-in, animate-out, fade-in-0, fade-out-0, slide-in-from-*, slide-out-to-*
+// bg-background, bg-secondary, text-foreground, text-muted-foreground, ring-offset-background, focus:ring-ring, border-l/r/t/b
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -23,6 +27,8 @@ function SheetClose({
 function SheetPortal({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
+  // Ensure Portal has a container if needed, especially in non-Next.js environments
+  // Default Radix behavior might be sufficient, but check if issues arise.
   return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />
 }
 
@@ -34,7 +40,7 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50", // Ensure bg-black/50 works or adjust
         className
       )}
       {...props}
@@ -70,7 +76,7 @@ function SheetContent({
         {...props}
       >
         {children}
-        <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
+        <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"> {/* Adjusted focus styles */}
           <XIcon className="size-4" />
           <span className="sr-only">Close</span>
         </SheetPrimitive.Close>
@@ -83,7 +89,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-1.5 p-4", className)}
+      className={cn("flex flex-col space-y-2 text-center sm:text-left p-6", className)} // Adjusted padding/spacing slightly
       {...props}
     />
   )
@@ -93,7 +99,7 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-footer"
-      className={cn("mt-auto flex flex-col gap-2 p-4", className)}
+      className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-0", className)} // Adjusted padding/spacing slightly
       {...props}
     />
   )
@@ -106,7 +112,7 @@ function SheetTitle({
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn("text-foreground font-semibold", className)}
+      className={cn("text-lg font-semibold text-foreground", className)} // Adjusted text size
       {...props}
     />
   )
@@ -119,7 +125,7 @@ function SheetDescription({
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
   )
@@ -134,4 +140,6 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
+  // SheetPortal, // Exporting Portal might not be necessary for basic usage
+  // SheetOverlay // Exporting Overlay might not be necessary for basic usage
 }

@@ -1,6 +1,5 @@
-"use client"
-import { useSidebar } from "../components/ui/sidebar"
-import { Button } from "../components/ui/button"
+import { useSidebar } from "./ui/sidebar"
+import { Button } from "./ui/button"
 import { Menu } from "lucide-react"
 
 export function MobileSidebarTrigger() {
@@ -20,4 +19,3 @@ export function MobileSidebarTrigger() {
         </div>
     )
 }
-
