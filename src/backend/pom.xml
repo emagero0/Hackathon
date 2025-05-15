@@ -13,24 +13,53 @@
     <version>0.0.1-SNAPSHOT</version>
     <name>ai-erp-backend</name>
     <description>Backend for AI Powered ERP Solution</description>
+
     <properties>
         <java.version>17</java.version>
-        <resilience4j.version>2.2.0</resilience4j.version> <!-- Define version property -->
+        <resilience4j.version>2.2.0</resilience4j.version>
+        <!-- Using BOM version suggested in the Google Cloud response, or a known recent stable one -->
+        <!-- <google.libraries-bom.version>26.59.0</google.libraries-bom.version> --> <!-- Let's try a very recent one from our earlier discussion. 26.1.4 might be too old for Spring Boot 3.2.4 -->
     </properties>
+
+    <!-- <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.google.cloud</groupId>
+                <artifactId>libraries-bom</artifactId>
+                <version>${google.libraries-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement> -->
+
     <dependencies>
+        <!-- Google Cloud Vertex AI dependency removed -->
+        <!-- <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-vertexai</artifactId>
+        </dependency> -->
+
+        <!-- Adding google-cloud-vertexai-extension to resolve Part class -->
+        <!-- <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-vertexai-extension</artifactId>
+            <version>0.4.0</version>
+        </dependency> -->
+
+        <!-- ALL YOUR OTHER DEPENDENCIES -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId> <!-- For WebClient -->
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
-        <dependency> <!-- Need AOP starter for Resilience4j annotations -->
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
-        <!-- Resilience4j dependencies -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot3</artifactId>
@@ -38,12 +67,12 @@
         </dependency>
         <dependency>
             <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-annotations</artifactId> <!-- For annotations -->
+            <artifactId>resilience4j-annotations</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
         <dependency>
             <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-spring6</artifactId> <!-- For Spring 6 integration -->
+            <artifactId>resilience4j-spring6</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
         <dependency>
@@ -56,67 +85,51 @@
             <artifactId>resilience4j-circuitbreaker</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
-        <dependency> <!-- Jackson for JSON processing (needed by WebFlux/WebClient) -->
+        <dependency>
              <groupId>com.fasterxml.jackson.core</groupId>
              <artifactId>jackson-databind</artifactId>
         </dependency>
-
-        <!-- Spring Data JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
-
-        <!-- Spring Boot Validation -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-
-        <!-- Spring AMQP for RabbitMQ -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
-
-        <!-- Lombok for reducing boilerplate code -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
-
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-
-		<!-- Tess4J (Tesseract Wrapper) -->
-		<dependency>
-			<groupId>net.sourceforge.tess4j</groupId>
-			<artifactId>tess4j</artifactId>
-			<version>5.11.0</version> <!-- Use a recent stable version -->
-		</dependency>
-
-		<!-- Apache PDFBox (for PDF handling) -->
-		<dependency>
-			<groupId>org.apache.pdfbox</groupId>
-			<artifactId>pdfbox</artifactId>
-			<version>3.0.2</version> <!-- Use a recent stable version -->
-		</dependency>
-		<!-- PDFBox requires a logging bridge, SLF4J is already included by Spring Boot -->
-
-        <!-- MySQL Connector/J -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+            <version>5.11.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.2</version>
+        </dependency>
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <version>8.3.0</version>
         </dependency>
+    </dependencies>
+    
 
-	</dependencies>
-
-	<build>
+    <build>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -132,5 +145,4 @@
             </plugin>
         </plugins>
     </build>
-
 </project>

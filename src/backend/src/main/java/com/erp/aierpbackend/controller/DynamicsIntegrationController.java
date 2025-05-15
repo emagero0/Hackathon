@@ -76,10 +76,17 @@ public class DynamicsIntegrationController {
             log.debug("Sending Job No {} to RabbitMQ queue {} with routing key {}",
                       jobNo, RabbitMQConfig.BC_JOB_LEDGER_QUEUE_NAME, RabbitMQConfig.BC_JOB_LEDGER_ROUTING_KEY);
 
+            // Explicitly set content type and let RabbitTemplate handle type info
             rabbitTemplate.convertAndSend(
                 RabbitMQConfig.EXCHANGE_NAME,
                 RabbitMQConfig.BC_JOB_LEDGER_ROUTING_KEY,
-                jobNo // Sending the Job_No as the message payload
+                jobNo, // Sending the Job_No as the message payload
+                message -> {
+                    // Ensure content type is set correctly for JSON converter
+                    message.getMessageProperties().setContentType("application/json");
+                    // The converter should add __TypeId__ automatically for String
+                    return message;
+                }
             );
 
             log.info("Successfully queued manual trigger for Job No: {}", jobNo);

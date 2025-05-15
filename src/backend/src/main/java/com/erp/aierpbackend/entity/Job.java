@@ -36,26 +36,19 @@ public class Job {
     @Column(name = "last_processed_at")
     private LocalDateTime lastProcessedAt;
 
-    @OneToOne(mappedBy = "job", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
-    private VerificationResult verificationResult;
+    // Removed VerificationResult field as it's now decoupled
+    // @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    // @JoinColumn(name = "verification_result_id", referencedColumnName = "id") // Foreign key in jobs table
+    // private VerificationResult verificationResult;
 
-    // Helper method to link verification result
-    public void setVerificationResult(VerificationResult verificationResult) {
-        if (verificationResult == null) {
-            if (this.verificationResult != null) {
-                this.verificationResult.setJob(null);
-            }
-        } else {
-            verificationResult.setJob(this);
-        }
-        this.verificationResult = verificationResult;
-    }
+    // Removed setVerificationResult helper method
 
     public enum JobStatus {
         PENDING,    // Initial state or awaiting processing
         PROCESSING, // Actively being checked by AI
         VERIFIED,   // AI check completed, no major issues found
         FLAGGED,    // AI check completed, issues found
+        SKIPPED,    // Verification skipped (e.g., did not qualify)
         ERROR       // Error during processing
     }
 }

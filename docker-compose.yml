@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db-container
+    environment:
+      MYSQL_ROOT_PASSWORD: "229T$8t6"
+      MYSQL_DATABASE: aierpdb
+      # MYSQL_USER: root # Removed: Cannot set MYSQL_USER to root
+      # MYSQL_PASSWORD: "229T$8t6" # Removed: Use MYSQL_ROOT_PASSWORD for root
+    ports:
+      - "3307:3306" # Map to 3307 on host to avoid conflict with local MySQL if any
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    networks:
+      - erp-network
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-p229T$8t6"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq-container
+    ports:
+      - "5672:5672"  # AMQP port
+      - "15672:15672" # Management UI port
+    networks:
+      - erp-network
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    container_name: backend-container
+    ports:
+      - "8081:8081" # Matching server.port in application.properties
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/aierpdb?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: "229T$8t6"
+      SPRING_RABBITMQ_HOST: rabbitmq
+      # Ensure Tesseract datapath is correct for the container or remove if not needed inside container
+      # TESSERACT_DATAPATH: /usr/share/tessdata 
+      # DYNAMICS_BC_ODATA_KEY: ${DYNAMICS_BC_ODATA_KEY} # Example for passing sensitive keys
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      gemini-python-service: # Added dependency on the new Python service
+        condition: service_started # Or service_healthy if healthcheck is added
+    networks:
+      - erp-network
+
+  gemini-python-service:
+    build:
+      context: ./src/gemini-python-service
+      dockerfile: Dockerfile
+    container_name: gemini-python-service-container
+    ports:
+      - "8001:8000" # Host port 8001 mapped to container port 8000
+    environment:
+      # These should ideally be sourced from a root .env file or your CI/CD environment
+      # For GOOGLE_APPLICATION_CREDENTIALS, if used, you'd also need to mount the credentials file as a volume
+      # e.g., - ./path/to/gcp-credentials.json:/app/gcp-credentials.json
+      # and then set GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
+      # If using ADC within GCP or via gcloud auth application-default login on host, this might not be needed.
+      GCP_PROJECT_ID: "${GCP_PROJECT_ID}" # Example: expecting these in a .env file at docker-compose root
+      GCP_LOCATION: "${GCP_LOCATION}"
+      GEMINI_MODEL_NAME: "${GEMINI_MODEL_NAME}"
+      # GOOGLE_APPLICATION_CREDENTIALS: "/app/secrets/gcp-credentials.json" # If mounting a service account key
+    # volumes: # Example if mounting service account key
+      # - ./path/to/your/service-account-key.json:/app/secrets/gcp-credentials.json:ro
+    networks:
+      - erp-network
+    # healthcheck: # Optional: Add a healthcheck for the Python service
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+
+  frontend:
+    build:
+      context: ./src/Frontend
+      dockerfile: Dockerfile
+    container_name: frontend-container
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - erp-network
+
+networks:
+  erp-network:
+    driver: bridge

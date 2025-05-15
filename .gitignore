@@ -12,6 +12,19 @@ __pycache__/
 dist/
 build/
 *.pyc
+.vite/ # Added for Vite frontend
+
+# Maven specific
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+# .mvn/wrapper/maven-wrapper.jar # Uncomment this line if you don't want to commit the wrapper jar.
 
 # IDE specific files
 .vscode/
@@ -28,6 +41,7 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+hs_err_pid*
 
 # Testing
 coverage/
@@ -35,7 +49,20 @@ coverage/
 
 # Database
 *.sqlite3
+mysql-data/
 
 # Temporary files
 *.tmp
 *.temp
+
+# Docker
+.dockerignore
+
+# Document files
+Jobs 2nd check pdf/
+src/Jobs 2nd check pdf/
+*.jpg
+*.pdf
+
+# Python virtual environments
+.venv/

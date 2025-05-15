@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+google-cloud-aiplatform>=1.40.0 # Please check PyPI for the latest stable version
+python-dotenv
+pydantic
+pydantic-settings # <--- ADD THIS LINE
+# Pillow # Optional: if image manipulation/validation is needed
