@@ -12,11 +12,14 @@ COPY requirements.txt requirements.txt
 # --trusted-host pypi.python.org: Can be useful if there are SSL issues with PyPI, often not needed
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the .env file.
-# IMPORTANT: For production, consider managing secrets via Docker secrets or environment variables
-# passed during 'docker run' or by the orchestration platform, rather than baking .env into the image.
-# For simplicity in this setup, we'll copy it. User should be aware of security implications.
-COPY .env .env
+# Set environment variables with default empty values
+# These will be overridden by Docker run/compose environment variables
+ENV GOOGLE_APPLICATION_CREDENTIALS="/app/service-account-key.json"
+ENV GEMINI_API_KEY=""
+ENV MODEL_NAME="gemini-2.0-flash-001"
+
+# Create a directory for the service account key
+RUN mkdir -p /app/secrets
 
 # Copy the rest of the application code (the 'app' directory) into the container at /app
 COPY ./app /app/app

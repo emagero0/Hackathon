@@ -253,13 +253,26 @@ Make sure you have the following installed on your system:
         ```
     *   The frontend application should now be running, typically at `http://localhost:5173`. Open this URL in your web browser.
 
-8.  **Docker Deployment (Optional):**
+8.  **Docker Deployment:**
     *   The project includes Docker configuration for containerized deployment.
-    *   Update the `docker-compose.yml` file as needed for your environment.
+    *   Create a `.env` file based on the provided `.env.example`:
+        ```bash
+        cp .env.example .env
+        # Edit .env with your values
+        ```
+    *   Place your Google Cloud service account key in the `secrets` directory:
+        ```bash
+        cp path/to/your/service-account-key.json secrets/service-account-key.json
+        ```
     *   Run the following command to start all services:
         ```bash
         docker-compose up -d
         ```
+
+9.  **CI/CD Setup:**
+    *   The project is configured for CI/CD pipelines.
+    *   See [CI_CD_SETUP.md](CI_CD_SETUP.md) for detailed instructions on setting up CI/CD.
+    *   See [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md) for information on required environment variables.
 
 ## API Endpoints
 

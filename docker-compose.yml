@@ -5,10 +5,8 @@ services:
     image: mysql:8.0
     container_name: mysql-db-container
     environment:
-      MYSQL_ROOT_PASSWORD: "229T$8t6"
+      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
       MYSQL_DATABASE: aierpdb
-      # MYSQL_USER: root # Removed: Cannot set MYSQL_USER to root
-      # MYSQL_PASSWORD: "229T$8t6" # Removed: Use MYSQL_ROOT_PASSWORD for root
     ports:
       - "3307:3306" # Map to 3307 on host to avoid conflict with local MySQL if any
     volumes:
@@ -16,7 +14,7 @@ services:
     networks:
       - erp-network
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-p229T$8t6"]
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,12 +42,15 @@ services:
       - "8081:8081" # Matching server.port in application.properties
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/aierpdb?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: "229T$8t6"
+      DB_USERNAME: "${DB_USERNAME:-root}"
+      DB_PASSWORD: "${DB_PASSWORD}"
       SPRING_RABBITMQ_HOST: rabbitmq
-      # Ensure Tesseract datapath is correct for the container or remove if not needed inside container
-      # TESSERACT_DATAPATH: /usr/share/tessdata 
-      # DYNAMICS_BC_ODATA_KEY: ${DYNAMICS_BC_ODATA_KEY} # Example for passing sensitive keys
+      RABBITMQ_USERNAME: "${RABBITMQ_USERNAME:-guest}"
+      RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD:-guest}"
+      DYNAMICS_BC_USERNAME: "${DYNAMICS_BC_USERNAME}"
+      DYNAMICS_BC_API_KEY: "${DYNAMICS_BC_API_KEY}"
+      # Configure LLM service URL for Docker environment
+      LLM_PYTHON_SERVICE_BASEURL: "http://gemini-python-service:8000"
     depends_on:
       mysql-db:
         condition: service_healthy
@@ -68,24 +69,17 @@ services:
     ports:
       - "8001:8000" # Host port 8001 mapped to container port 8000
     environment:
-      # These should ideally be sourced from a root .env file or your CI/CD environment
-      # For GOOGLE_APPLICATION_CREDENTIALS, if used, you'd also need to mount the credentials file as a volume
-      # e.g., - ./path/to/gcp-credentials.json:/app/gcp-credentials.json
-      # and then set GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
-      # If using ADC within GCP or via gcloud auth application-default login on host, this might not be needed.
-      GCP_PROJECT_ID: "${GCP_PROJECT_ID}" # Example: expecting these in a .env file at docker-compose root
-      GCP_LOCATION: "${GCP_LOCATION}"
-      GEMINI_MODEL_NAME: "${GEMINI_MODEL_NAME}"
-      # GOOGLE_APPLICATION_CREDENTIALS: "/app/secrets/gcp-credentials.json" # If mounting a service account key
-    # volumes: # Example if mounting service account key
-      # - ./path/to/your/service-account-key.json:/app/secrets/gcp-credentials.json:ro
+      MODEL_NAME: "${GEMINI_MODEL_NAME:-gemini-2.0-flash-001}"
+      GOOGLE_APPLICATION_CREDENTIALS: "/app/secrets/service-account-key.json"
+    volumes:
+      - ./secrets/service-account-key.json:/app/secrets/service-account-key.json:ro
     networks:
       - erp-network
-    # healthcheck: # Optional: Add a healthcheck for the Python service
-    #   test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
     build:

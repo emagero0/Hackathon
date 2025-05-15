@@ -66,3 +66,23 @@ src/Jobs 2nd check pdf/
 
 # Python virtual environments
 .venv/
+
+# Sensitive files
+**/service-account-key.json
+**/application-production.properties
+**/application-local.properties
+**/application-dev.properties
+**/secrets.properties
+**/credentials.json
+**/key.json
+
+# Compiled Java classes
+*.class
+
+# Large binary files
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
