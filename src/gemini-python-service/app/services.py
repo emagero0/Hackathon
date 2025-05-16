@@ -30,9 +30,39 @@ def init_vertexai():
 
     try:
         logger.info(f"Initializing Vertex AI with Project ID: {settings.gcp_project_id}, Location: {settings.gcp_location}")
+        from google.oauth2 import service_account
+        import json
+        import tempfile
 
-        # Check if credentials file exists when specified
-        if settings.google_application_credentials:
+        # Check if service account credentials are provided via environment variables
+        if settings.has_service_account_env_vars():
+            try:
+                # Create a service account info dictionary from environment variables
+                service_account_info = {
+                    "type": settings.google_service_account_type,
+                    "project_id": settings.google_service_account_project_id,
+                    "private_key_id": settings.google_service_account_private_key_id,
+                    "private_key": settings.google_service_account_private_key,
+                    "client_email": settings.google_service_account_client_email,
+                    "client_id": settings.google_service_account_client_id,
+                    "auth_uri": settings.google_service_account_auth_uri,
+                    "token_uri": settings.google_service_account_token_uri,
+                    "auth_provider_x509_cert_url": settings.google_service_account_auth_provider_x509_cert_url,
+                    "client_x509_cert_url": settings.google_service_account_client_x509_cert_url,
+                    "universe_domain": settings.google_service_account_universe_domain
+                }
+
+                # Create credentials from the service account info
+                credentials = service_account.Credentials.from_service_account_info(service_account_info)
+                vertexai.init(project=settings.gcp_project_id, location=settings.gcp_location, credentials=credentials)
+                logger.info("Vertex AI initialized using service account credentials from environment variables.")
+                _vertex_ai_initialized = True
+            except Exception as e:
+                logger.error(f"Failed to initialize Vertex AI with service account credentials from environment variables: {e}", exc_info=True)
+                _vertex_ai_initialized = False
+
+        # Check if credentials file exists when specified (legacy method)
+        elif settings.google_application_credentials:
             import os
             if not os.path.exists(settings.google_application_credentials):
                 logger.error(f"Service account credentials file not found at: {settings.google_application_credentials}")
@@ -41,13 +71,12 @@ def init_vertexai():
                 return
 
             try:
-                from google.oauth2 import service_account
                 credentials = service_account.Credentials.from_service_account_file(settings.google_application_credentials)
                 vertexai.init(project=settings.gcp_project_id, location=settings.gcp_location, credentials=credentials)
-                logger.info("Vertex AI initialized using service account credentials.")
+                logger.info("Vertex AI initialized using service account credentials from file.")
                 _vertex_ai_initialized = True
             except Exception as e:
-                logger.error(f"Failed to initialize Vertex AI with service account credentials: {e}", exc_info=True)
+                logger.error(f"Failed to initialize Vertex AI with service account credentials from file: {e}", exc_info=True)
                 _vertex_ai_initialized = False
         else:
             # Relies on Application Default Credentials (ADC)

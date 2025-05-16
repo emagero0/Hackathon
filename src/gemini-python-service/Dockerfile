@@ -14,11 +14,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Set environment variables with default empty values
 # These will be overridden by Docker run/compose environment variables
-ENV GOOGLE_APPLICATION_CREDENTIALS="/app/secrets/service-account-key.json"
 ENV MODEL_NAME="gemini-2.0-flash-001"
+ENV GCP_PROJECT_ID=""
+ENV GCP_LOCATION="us-central1"
 
-# Create a directory for the service account key
-RUN mkdir -p /app/secrets
+# Legacy support for service account key file if needed
+ENV GOOGLE_APPLICATION_CREDENTIALS=""
 
 # Copy the rest of the application code (the 'app' directory) into the container at /app
 COPY ./app /app/app

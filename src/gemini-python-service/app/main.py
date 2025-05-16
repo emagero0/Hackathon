@@ -76,18 +76,31 @@ def health_check():
     if not services._vertex_ai_initialized:
         message += " WARNING: Vertex AI is not initialized. Document verification will fail."
 
-    # Check if service account credentials file exists
+    # Check credentials status
     credentials_status = "not_configured"
     credentials_message = "No service account credentials configured."
+    credentials_type = "none"
 
-    if config.settings.google_application_credentials:
+    # Check if service account credentials are provided via environment variables
+    if config.settings.has_service_account_env_vars():
+        credentials_status = "available"
+        credentials_message = f"Service account credentials found in environment variables for: {config.settings.google_service_account_client_email}"
+        credentials_type = "service_account_env"
+    # Check if service account credentials file exists (legacy method)
+    elif config.settings.google_application_credentials:
         import os
         if os.path.exists(config.settings.google_application_credentials):
             credentials_status = "available"
             credentials_message = f"Service account credentials found at: {config.settings.google_application_credentials}"
+            credentials_type = "service_account_file"
         else:
             credentials_status = "missing"
             credentials_message = f"Service account credentials file not found at: {config.settings.google_application_credentials}"
+            credentials_type = "service_account_file_missing"
+    else:
+        # Assuming Application Default Credentials
+        credentials_type = "adc"
+        credentials_message = "Using Application Default Credentials (ADC)"
 
     return {
         "status": status,
@@ -99,7 +112,7 @@ def health_check():
         "credentials": {
             "status": credentials_status,
             "message": credentials_message,
-            "type": "service_account" if config.settings.google_application_credentials else "adc"
+            "type": credentials_type
         }
     }
 

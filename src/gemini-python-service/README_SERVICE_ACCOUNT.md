@@ -1,10 +1,12 @@
 # Google Cloud Service Account Setup
 
-## Important: Service Account Key Required
+## Service Account Authentication Options
 
-To use the Gemini API, you need to place a valid Google Cloud service account key file in this directory.
+There are two ways to authenticate with Google Cloud for using the Gemini API:
 
-## Steps to Create a Service Account Key:
+### Option 1: Using Environment Variables (Recommended)
+
+The service can now use service account credentials directly from environment variables. This is the recommended approach, especially for containerized deployments and CI/CD pipelines.
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Navigate to "IAM & Admin" > "Service Accounts"
@@ -14,8 +16,34 @@ To use the Gemini API, you need to place a valid Google Cloud service account ke
    - `Vertex AI Service Agent`
 5. Create a key for the service account (JSON format)
 6. Download the key file
-7. Rename it to `service-account-key.json`
-8. Place it in the root directory of the gemini-python-service (same level as this README file)
+7. Add the contents of the key file to your main `.env` file in the root directory using the following format:
+
+```
+GOOGLE_SERVICE_ACCOUNT_TYPE=service_account
+GOOGLE_SERVICE_ACCOUNT_PROJECT_ID=your-project-id
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID=your-private-key-id
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n"
+GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL=your-service-account@your-project-id.iam.gserviceaccount.com
+GOOGLE_SERVICE_ACCOUNT_CLIENT_ID=your-client-id
+GOOGLE_SERVICE_ACCOUNT_AUTH_URI=https://accounts.google.com/o/oauth2/auth
+GOOGLE_SERVICE_ACCOUNT_TOKEN_URI=https://oauth2.googleapis.com/token
+GOOGLE_SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
+GOOGLE_SERVICE_ACCOUNT_CLIENT_X509_CERT_URL=https://www.googleapis.com/robot/v1/metadata/x509/your-service-account%40your-project-id.iam.gserviceaccount.com
+GOOGLE_SERVICE_ACCOUNT_UNIVERSE_DOMAIN=googleapis.com
+```
+
+### Option 2: Using a Service Account Key File (Legacy)
+
+Alternatively, you can still use a service account key file:
+
+1. Follow steps 1-6 from Option 1
+2. Rename the key file to `service-account-key.json`
+3. Place it in the root directory of the gemini-python-service (same level as this README file)
+4. Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable in the `.env` file to point to this file:
+
+```
+GOOGLE_APPLICATION_CREDENTIALS="./service-account-key.json"
+```
 
 ## Gemini 2.0 Models Configuration
 
