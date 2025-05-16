@@ -68,7 +68,9 @@ src/Jobs 2nd check pdf/
 .venv/
 
 # Sensitive files
-**/service-account-key.json
+# Allow the Python microservice service account key since this is a private repo
+# **/service-account-key.json
+secrets/service-account-key.json
 **/application-production.properties
 **/application-local.properties
 **/application-dev.properties
