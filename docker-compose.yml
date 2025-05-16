@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   mysql-db:
@@ -14,7 +14,17 @@ services:
     networks:
       - erp-network
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${DB_PASSWORD}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,7 +33,7 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq-container
     ports:
-      - "5672:5672"  # AMQP port
+      - "5672:5672" # AMQP port
       - "15672:15672" # Management UI port
     networks:
       - erp-network
@@ -40,17 +50,9 @@ services:
     container_name: backend-container
     ports:
       - "8081:8081" # Matching server.port in application.properties
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/aierpdb?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-      DB_USERNAME: "${DB_USERNAME:-root}"
-      DB_PASSWORD: "${DB_PASSWORD}"
-      SPRING_RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USERNAME: "${RABBITMQ_USERNAME:-guest}"
-      RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD:-guest}"
-      DYNAMICS_BC_USERNAME: "${DYNAMICS_BC_USERNAME}"
-      DYNAMICS_BC_API_KEY: "${DYNAMICS_BC_API_KEY}"
-      # Configure LLM service URL for Docker environment
-      LLM_PYTHON_SERVICE_BASEURL: "http://gemini-python-service:8000"
+    env_file:
+      - .env
+
     depends_on:
       mysql-db:
         condition: service_healthy
