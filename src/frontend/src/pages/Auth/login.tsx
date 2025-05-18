@@ -6,6 +6,8 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Loader2, FileText, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { FieldError } from 'react-hook-form';
+import { login } from '../../services/authService';
+import { toast } from 'sonner';
 
 interface LoginFormData {
   username: string;
@@ -34,11 +36,7 @@ export function SourceLoginPage({ onLogin }: LoginPageProps) {
   } = useForm<LoginFormData>();
   const navigate = useNavigate();
 
-  // Dummy users - replace with actual backend API call
-  const dummyUsers: User[] = [
-    { username: 'admin', password: '#admin001', role: 'admin' },
-    { username: 'manager', password: '#manager1', role: 'verification_manager' },
-  ];
+  // No longer need dummy users as we're using the real API
 
   useEffect(() => {
     const prefersDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -52,20 +50,27 @@ export function SourceLoginPage({ onLogin }: LoginPageProps) {
 
   const onSubmit = async (data: LoginFormData) => {
     setLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 800)); // Simulate API delay
 
-    const user = dummyUsers.find(
-      u => u.username === data.username && u.password === data.password
-    );
+    try {
+      // Call the real login API
+      const response = await login(data);
 
-    if (user) {
+      // Create a user object from the response to match the expected format
+      const user: User = {
+        username: response.username,
+        password: '', // We don't store the password
+        role: response.roles[0] // Use the first role
+      };
+
       onLogin(user); // Call the function passed from App.tsx
       navigate('/'); // Navigate to dashboard or home on successful login
-    } else {
-      // TODO: Replace alert with a more user-friendly error message (e.g., using toast)
-      alert('Invalid username or password');
+      toast.success('Login successful!');
+    } catch (error: any) {
+      // Use toast for error messages
+      toast.error(error.response?.data?.message || 'Invalid username or password');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const getErrorMessage = (error?: FieldError): string => {

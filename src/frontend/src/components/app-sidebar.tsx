@@ -100,17 +100,15 @@ export function AppSidebar({ userRole, onLogout }: AppSidebarProps) {
               </SidebarMenuButton>
             </SidebarMenuItem>
 
-            {/* Added Job Verification link for verification_manager */}
-            {userRole === 'verification_manager' && (
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/job-verification")}>
-                  <Link to="/job-verification">
-                    <ClipboardCheck className="h-4 w-4" />
-                    <span>Job Verification</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
+            {/* Job Verification link visible to all users */}
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={isActive("/job-verification")}>
+                <Link to="/job-verification">
+                  <ClipboardCheck className="h-4 w-4" />
+                  <span>Job Verification</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
 
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive("/analytics")}>

@@ -290,7 +290,7 @@ export function JobsOverview() {
 // Update JobCard to use JobSummary interface and format data
 function JobCard({ job }: { job: JobSummary }) {
   const formatRelativeDate = (dateString: string | null) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return '';
     try {
       // Ensure date-fns is installed or use native Date formatting
       return formatDistanceToNow(new Date(dateString), { addSuffix: true });
@@ -310,9 +310,9 @@ function JobCard({ job }: { job: JobSummary }) {
         {job.status === "ERROR" && <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />} {/* Added Error status */}
 
         <div className="flex-1 overflow-hidden"> {/* Added flex-1 and overflow-hidden */}
-          <div className="font-medium truncate" title={job.jobTitle}>{job.jobTitle || 'N/A'}</div>
+          <div className="font-medium truncate" title={job.jobTitle}>{job.jobTitle || ''}</div>
           <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
-            <span className="truncate" title={job.customerName}>{job.customerName || 'N/A'}</span>
+            <span className="truncate" title={job.customerName}>{job.customerName || ''}</span>
             <span>•</span>
             <span>{formatRelativeDate(job.lastProcessedAt)}</span>
           </div>

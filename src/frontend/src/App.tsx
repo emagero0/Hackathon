@@ -13,6 +13,7 @@ import JobVerification from "./pages/JobVerification"
 import { SourceLoginPage as Login } from "./pages/Auth/login"
 import Register from "./pages/Auth/register"
 import { MobileSidebarTrigger } from "./components/mobile-sidebar-trigger"
+import { setupAxiosInterceptors, isAuthenticated as checkAuthentication, getCurrentUser } from './services/authService'
 
 // Match the User interface from login.tsx
 interface User {
@@ -26,26 +27,33 @@ function App() {
   const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
-    // Check if user is authenticated (e.g., check localStorage or JWT)
-    const token = localStorage.getItem('token')
-    if (token) {
-      setIsAuthenticated(true)
-      setUserRole(localStorage.getItem('userRole'))
+    // Setup axios interceptors for authentication
+    setupAxiosInterceptors();
+
+    // Check if user is authenticated
+    if (checkAuthentication()) {
+      setIsAuthenticated(true);
+      const user = getCurrentUser();
+      if (user && user.roles.length > 0) {
+        setUserRole(user.roles[0]);
+      }
     }
   }, [])
 
   const handleLogin = (user: User) => {
-    localStorage.setItem('token', 'dummy-token') // In real app, use actual JWT token
-    localStorage.setItem('userRole', user.role)
+    // Token is now handled by the login function in authService
+    // We just need to update the state
     setIsAuthenticated(true)
     setUserRole(user.role)
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('userRole')
-    setIsAuthenticated(false)
-    setUserRole(null)
+    // Use the logout function from authService
+    import('./services/authService').then(({ logout }) => {
+      logout();
+      setIsAuthenticated(false);
+      setUserRole(null);
+    });
   }
 
   return (

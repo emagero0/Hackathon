@@ -7,6 +7,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
       MYSQL_DATABASE: aierpdb
+      TZ: "Africa/Nairobi"
     ports:
       - "3307:3306" # Map to 3307 on host to avoid conflict with local MySQL if any
     volumes:
@@ -22,6 +23,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq-container
+    environment:
+      TZ: "Africa/Nairobi"
     ports:
       - "5672:5672"  # AMQP port
       - "15672:15672" # Management UI port
@@ -41,7 +44,7 @@ services:
     ports:
       - "8081:8081" # Matching server.port in application.properties
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/aierpdb?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/aierpdb?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=Africa/Nairobi&allowPublicKeyRetrieval=true
       DB_USERNAME: "${DB_USERNAME:-root}"
       DB_PASSWORD: "${DB_PASSWORD}"
       SPRING_RABBITMQ_HOST: rabbitmq
@@ -51,6 +54,8 @@ services:
       DYNAMICS_BC_API_KEY: "${DYNAMICS_BC_API_KEY}"
       # Configure LLM service URL for Docker environment
       LLM_PYTHON_SERVICE_BASEURL: "http://gemini-python-service:8000"
+      # Set timezone to fix time discrepancy
+      TZ: "Africa/Nairobi"
     depends_on:
       mysql-db:
         condition: service_healthy
@@ -73,6 +78,8 @@ services:
       GCP_PROJECT_ID: "${GCP_PROJECT_ID}"
       GCP_LOCATION: "${GCP_LOCATION}"
       GEMINI_MODEL_NAME: "${GEMINI_MODEL_NAME:-gemini-2.0-flash-001}"
+      # Set timezone to fix time discrepancy
+      TZ: "Africa/Nairobi"
 
       # Google Cloud Service Account Credentials
       GOOGLE_SERVICE_ACCOUNT_TYPE: "${GOOGLE_SERVICE_ACCOUNT_TYPE}"
@@ -99,6 +106,8 @@ services:
       context: ./src/Frontend
       dockerfile: Dockerfile
     container_name: frontend-container
+    environment:
+      TZ: "Africa/Nairobi"
     ports:
       - "80:80"
     depends_on:

@@ -6,6 +6,8 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Loader2, FileText, Lock, User, Mail, Eye, EyeOff } from 'lucide-react';
 import { FieldError } from 'react-hook-form';
+import { register as registerUser } from '../../services/authService';
+import { toast } from 'sonner';
 
 interface RegisterFormData {
   username: string;
@@ -40,19 +42,30 @@ export function SourceRegisterPage() {
 
   const onSubmit = async (data: RegisterFormData) => {
     setLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 800)); // Simulate API delay
 
-    // Dummy registration - replace with actual backend API call
-    console.log('Registered user:', data);
-    // Optionally, log the user in immediately after registration
-    // localStorage.setItem('user', JSON.stringify({
-    //   username: data.username,
-    //   role: 'user' // Default role, adjust as needed
-    // }));
+    try {
+      // Prepare the signup request
+      const signupRequest = {
+        username: data.username,
+        email: data.email,
+        password: data.password,
+        roles: ['user'] // Default role
+      };
 
-    // Redirect to login page after registration for now
-    navigate('/login');
-    setLoading(false);
+      // Call the real registration API
+      await registerUser(signupRequest);
+
+      // Show success message
+      toast.success('Registration successful! Please login.');
+
+      // Redirect to login page after registration
+      navigate('/login');
+    } catch (error: any) {
+      // Use toast for error messages
+      toast.error(error.response?.data?.message || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const password = watch('password');

@@ -10,6 +10,10 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
+# Set timezone for the container
+ENV TZ=Africa/Nairobi
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # Set environment variables with default empty values
 # These will be overridden by Docker run/compose environment variables
 ENV DB_USERNAME=""

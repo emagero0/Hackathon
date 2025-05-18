@@ -108,27 +108,26 @@ export function JobsTable() {
             <TableHead>Customer</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Date</TableHead>
-            <TableHead className="text-right">Amount</TableHead> {/* Keep Amount column header for layout */}
             <TableHead className="w-[50px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center">
+              <TableCell colSpan={6} className="h-24 text-center">
                 <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                 <div>Loading jobs...</div>
               </TableCell>
             </TableRow>
           ) : error ? (
              <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-red-500">
+              <TableCell colSpan={6} className="h-24 text-center text-red-500">
                 {error}
               </TableCell>
             </TableRow>
           ) : jobs.length === 0 ? (
              <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                 No jobs found.
               </TableCell>
             </TableRow>
@@ -142,18 +141,14 @@ export function JobsTable() {
                 </Link>
               </TableCell>
               <TableCell>
-                <div>{job.jobTitle || 'N/A'}</div> {/* Use jobTitle */}
+                <div>{job.jobTitle || ''}</div> {/* Use jobTitle */}
                  {/* Issues are not in JobSummaryDTO, remove this section */}
               </TableCell>
-              <TableCell>{job.customerName || 'N/A'}</TableCell> {/* Use customerName */}
+              <TableCell>{job.customerName || ''}</TableCell> {/* Use customerName */}
               <TableCell>{getStatusBadge(job.status)}</TableCell>
               <TableCell>
                 {/* Format the date */}
-                {job.lastProcessedAt ? format(new Date(job.lastProcessedAt), 'PP') : 'N/A'}
-              </TableCell>
-              <TableCell className="text-right">
-                 {/* Amount is not in JobSummaryDTO, maybe remove or show placeholder */}
-                 -
+                {job.lastProcessedAt ? format(new Date(job.lastProcessedAt), 'PP') : ''}
               </TableCell>
               <TableCell>
                 <DropdownMenu>

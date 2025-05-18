@@ -19,6 +19,12 @@ RUN pnpm run build
 FROM nginx:alpine
 WORKDIR /usr/share/nginx/html
 
+# Set timezone for the container
+ENV TZ=Africa/Nairobi
+RUN apk add --no-cache tzdata && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
+    echo $TZ > /etc/timezone
+
 # Remove default Nginx static assets
 RUN rm -rf ./*
 

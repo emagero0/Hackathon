@@ -112,7 +112,7 @@ export function JobDetails({ jobData }: JobDetailsProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="text-sm font-medium text-muted-foreground">BC Job ID</div>
-              <div>{jobData.businessCentralJobId || 'N/A'}</div>
+              <div>{jobData.businessCentralJobId || ''}</div>
             </div>
              <div>
               <div className="text-sm font-medium text-muted-foreground">Internal ID</div>
@@ -120,18 +120,18 @@ export function JobDetails({ jobData }: JobDetailsProps) {
             </div>
             <div>
               <div className="text-sm font-medium text-muted-foreground">Title</div>
-              <div>{jobData.jobTitle || 'N/A'}</div>
+              <div>{jobData.jobTitle || ''}</div>
             </div>
             <div>
               <div className="text-sm font-medium text-muted-foreground">Customer</div>
-              <div>{jobData.customerName || 'N/A'}</div>
+              <div>{jobData.customerName || ''}</div>
             </div>
              <div>
               <div className="text-sm font-medium text-muted-foreground">Last Processed</div>
               <div>
                 {jobData.lastProcessedAt
                   ? format(new Date(jobData.lastProcessedAt), 'PPpp')
-                  : 'N/A'}
+                  : ''}
               </div>
             </div>
              {/* Remove fields not present in JobDetailData */}
