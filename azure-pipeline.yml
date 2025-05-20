@@ -1,0 +1,72 @@
+trigger:
+  branches:
+    include:
+      - develop
+      - master
+      - main
+  paths:
+    include:
+      - "*"
+
+pr:
+  branches:
+    include:
+      - master
+      - develop
+    exclude:
+      - develop/*
+  paths:
+    include:
+      - "*"
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  - group: JobSecondChecking
+
+jobs:
+  - job: FullPipeline
+    displayName: "Job Second Checking CI/CD Pipeline"
+    steps:
+      - checkout: self
+        displayName: "Checkout Code"
+
+      - script: |
+          docker build -t $(FRONTEND_DOCKER_IMAGE) ./src/frontend
+        displayName: "Build frontend Image"
+      - script: |
+          docker build -t $(BACKEND_DOCKER_IMAGE) ./src/backend
+        displayName: "Build backend Image"
+      - script: |
+          docker build -t $(GEMINI_DOCKER_IMAGE) ./src/gemini-python-service
+        displayName: "Build gemini Image"
+
+      - script: |
+          echo "$(DOCKERHUB_PASSWORD)" | docker login -u "$(DOCKERHUB_USERNAME)" --password-stdin
+          docker push "$(FRONTEND_DOCKER_IMAGE)"
+          docker push "$(BACKEND_DOCKER_IMAGE)"
+          docker push "$(GEMINI_DOCKER_IMAGE)"
+        displayName: "Push Docker Images to Docker Hub"
+        condition: and(succeeded(), in(variables['Build.SourceBranch'], 'refs/heads/main', 'refs/heads/master'))
+
+      - task: SSH@0
+        inputs:
+          sshEndpoint: "AI-Job-Second-Checking"
+          runOptions: "commands"
+          commands: |
+            #!/bin/bash
+
+             # Suppress STDERR messages and handle exit codes
+            OUTPUT_MESSAGE=$(sudo docker-compose -f /root/snap/docker/common/project/backend/compose.yaml pull 2>&1 || true)
+            echo "$OUTPUT_MESSAGE"
+            OUTPUT_MESSAGE=$(sudo docker-compose -f /root/snap/docker/common/project/backend/compose.yaml down --remove-orphans 2>&1 || true)
+            echo "$OUTPUT_MESSAGE"
+            OUTPUT_MESSAGE=$(sudo docker-compose -f /root/snap/docker/common/project/backend/compose.yaml up --force-recreate -d 2>&1 || true)
+            echo "$OUTPUT_MESSAGE"
+            OUTPUT_MESSAGE=$(sudo docker system prune -af 2>&1 || true)
+            echo "$OUTPUT_MESSAGE"
+            # Verify containers are running
+            sudo docker ps
+        displayName: "Deploy to DigitalOcean"
+        condition: and(succeeded(), in(variables['Build.SourceBranch'], 'refs/heads/main', 'refs/heads/master'))

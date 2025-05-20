@@ -1,5 +1,6 @@
 package com.erp.aierpbackend.service;
 
+import com.erp.aierpbackend.dto.gemini.DocumentClassificationResult;
 import com.erp.aierpbackend.dto.gemini.GeminiVerificationResult; // Reusing DTO, consider renaming later
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,8 +10,10 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException; // Keep for method signature, though WebClient uses reactive exceptions
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -74,11 +77,22 @@ public class LLMProxyService {
             this.erp_data = erp_data;
         }
     }
-    
+
     // Response DTO for identifier extraction from Python service
     private static class IdentifierExtractionResponsePayload {
         public Map<String, String> extracted_identifiers;
         public String error_message; // Optional
+    }
+
+    // Request payload for document classification
+    private static class ClassificationRequestPayload {
+        public String job_no;
+        public List<DocumentImagePayload> document_images;
+
+        public ClassificationRequestPayload(String job_no, List<DocumentImagePayload> document_images) {
+            this.job_no = job_no;
+            this.document_images = document_images;
+        }
     }
 
 
@@ -107,7 +121,8 @@ public class LLMProxyService {
                     .bodyValue(payload)
                     .retrieve()
                     .bodyToMono(IdentifierExtractionResponsePayload.class)
-                    .block(); // Blocking for simplicity, consider reactive flow later
+                    .timeout(Duration.ofSeconds(30)) // Add 30-second timeout for identifier extraction
+                    .block(Duration.ofSeconds(35)); // Blocking with timeout
 
             if (response != null) {
                 if (response.error_message != null && !response.error_message.isEmpty()) {
@@ -123,6 +138,60 @@ public class LLMProxyService {
             log.error("Error calling LLM service for identifier extraction (job {}): {}", jobNo, e.getMessage(), e);
             throw new IOException("Failed to call LLM service for identifier extraction: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Classifies a document using the LLM service.
+     *
+     * @param jobNo The job number
+     * @param documentImageBytesList List of document images as byte arrays
+     * @return Mono containing the classification result
+     */
+    public Mono<DocumentClassificationResult> classifyDocument(
+            String jobNo,
+            List<byte[]> documentImageBytesList
+    ) {
+        log.info("LLMProxyService: Starting document classification for Job No: '{}'", jobNo);
+
+        if (documentImageBytesList == null || documentImageBytesList.isEmpty()) {
+            log.warn("No document images provided for classification. Job No: '{}'", jobNo);
+            return Mono.error(new IOException("No document images provided for classification"));
+        }
+
+        List<DocumentImagePayload> imagePayloads = documentImageBytesList.stream()
+                .map(bytes -> new DocumentImagePayload(Base64.getEncoder().encodeToString(bytes), "image/png"))
+                .collect(Collectors.toList());
+
+        ClassificationRequestPayload payload = new ClassificationRequestPayload(jobNo, imagePayloads);
+
+        return webClient.post()
+                .uri("/classify_document")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(payload)
+                .retrieve()
+                .bodyToMono(DocumentClassificationResult.class)
+                // Add timeout to prevent hanging indefinitely
+                .timeout(Duration.ofSeconds(30))
+                .doOnError(e -> log.error("Error or timeout calling LLM service for document classification (job '{}'): {}",
+                        jobNo, e.getMessage(), e))
+                .onErrorResume(e -> {
+                    // Create a fallback response with UNKNOWN type
+                    DocumentClassificationResult fallback = new DocumentClassificationResult();
+                    fallback.setDocumentType("UNKNOWN");
+                    fallback.setConfidence(0.0);
+                    fallback.setReasoning("Error calling LLM service: " + e.getMessage());
+
+                    if (e instanceof java.util.concurrent.TimeoutException) {
+                        log.error("Timeout while waiting for LLM classification response for job '{}'", jobNo);
+                        fallback.setReasoning("Timeout while waiting for classification response");
+                    } else {
+                        log.error("Error calling LLM service for document classification (job '{}'): {}",
+                                jobNo, e.getMessage(), e);
+                        fallback.setReasoning("Error calling LLM service: " + e.getMessage());
+                    }
+
+                    return Mono.just(fallback);
+                });
     }
 
     public GeminiVerificationResult verifyDocument(
@@ -152,7 +221,8 @@ public class LLMProxyService {
                     .bodyValue(payload)
                     .retrieve()
                     .bodyToMono(GeminiVerificationResult.class) // Deserialize directly to this DTO
-                    .block(); // Blocking for simplicity
+                    .timeout(Duration.ofSeconds(60)) // Add 60-second timeout for verification
+                    .block(Duration.ofSeconds(65)); // Blocking with timeout
 
             if (response != null) {
                 // Check for an error message field if your Python service adds one to GeminiVerificationResult structure

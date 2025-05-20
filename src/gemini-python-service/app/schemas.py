@@ -16,6 +16,10 @@ class VerificationRequest(BaseModel):
     document_images: List[DocumentImage]
     erp_data: Dict[str, Any] # Represents the structured BC data
 
+class ClassificationRequest(BaseModel):
+    job_no: str
+    document_images: List[DocumentImage]
+
 # --- Response Schemas ---
 
 class IdentifierExtractionResponse(BaseModel):
@@ -47,4 +51,10 @@ class VerificationResponse(BaseModel):
     # extracted_values: Optional[ExtractedValues] = None # If you decide to include this
     overall_verification_confidence: float = 0.0
     raw_llm_response: Optional[str] = None # For debugging
+    error_message: Optional[str] = None # Optional field for errors
+
+class ClassificationResponse(BaseModel):
+    document_type: str = Field(description="The classified document type (SalesQuote, ProformaInvoice, JobConsumption, or UNKNOWN)")
+    confidence: float = Field(default=0.0, description="A confidence score between 0.0 and 1.0")
+    reasoning: Optional[str] = Field(default=None, description="Brief explanation of why this classification was chosen")
     error_message: Optional[str] = None # Optional field for errors

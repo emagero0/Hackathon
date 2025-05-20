@@ -429,6 +429,202 @@ def _build_job_consumption_prompt(job_no: str, erp_data: Dict[str, Any]) -> Dict
 
     return prompt
 
+def _build_document_classification_prompt() -> Dict[str, Any]:
+    """
+    Build a structured prompt for document classification.
+    """
+    prompt = {
+        "task": "document_classification",
+        "possibleDocumentTypes": [
+            {
+                "type": "SalesQuote",
+                "characteristics": [
+                    "Contains 'SALES QUOTE' in the header",
+                    "Has quote number, usually labeled as 'SQ' followed by numbers",
+                    "Contains customer information",
+                    "Has line items with descriptions, quantities, and prices",
+                    "Includes payment options like 'Click here to pay via Mpesa, Click here to pay via VISA/Master Card'"
+                ]
+            },
+            {
+                "type": "ProformaInvoice",
+                "characteristics": [
+                    "Contains 'PRO FORMA INVOICE' in the header",
+                    "Contains phrase 'This is not a Tax Invoice. A Tax Invoice will be issued upon supply...'",
+                    "Has invoice number, usually labeled as 'Tax Invoice No'",
+                    "Contains customer information",
+                    "Has line items with descriptions, quantities, and prices",
+                    "Clearly indicates pre-sale, quotation-like purpose"
+                ]
+            },
+            {
+                "type": "JobConsumption",
+                "characteristics": [
+                    "Contains 'JOB SHIPMENT' in the header",
+                    "Has job shipment number field labeled as 'Job Shipment No'",
+                    "Contains 'INSTRUCTED BY', 'DISPATCHED BY', 'RECEIVED BY' sections",
+                    "Has logistics-related, dispatch-focused format"
+                ]
+            }
+        ],
+        "instructions": [
+            "Analyze the provided document images.",
+            "Determine which document type it matches based on the characteristics listed.",
+            "Return the document type as one of: 'SalesQuote', 'ProformaInvoice', or 'JobConsumption'.",
+            "If you cannot confidently classify the document, return 'UNKNOWN'."
+        ],
+        "outputFormat": {
+            "documentType": "The classified document type (SalesQuote, ProformaInvoice, JobConsumption, or UNKNOWN)",
+            "confidence": "A confidence score between 0.0 and 1.0",
+            "reasoning": "Brief explanation of why this classification was chosen"
+        }
+    }
+    return prompt
+
+async def classify_document_with_gemini(
+    request_data: schemas.ClassificationRequest
+) -> schemas.ClassificationResponse:
+    """
+    Classifies a document using Gemini.
+    """
+    if not _vertex_ai_initialized:
+        logger.error("Vertex AI not initialized. Cannot process request.")
+        return schemas.ClassificationResponse(
+            document_type="UNKNOWN",
+            confidence=0.0,
+            error_message="Vertex AI client not initialized."
+        )
+
+    # List of model names to try in order of preference
+    model_names = [
+        settings.gemini_model_name,      # Try the configured model first (gemini-2.0-flash-001)
+        "gemini-2.0-flash-lite-001",     # Gemini 2.0 Flash Lite model as fallback
+    ]
+
+    # Build the classification prompt
+    prompt_structure = _build_document_classification_prompt()
+    prompt_text = json.dumps(prompt_structure, indent=2)
+    logger.debug(f"Gemini Classification Prompt for job {request_data.job_no}:\n{prompt_text}")
+
+    # Build the parts for the Gemini request
+    gemini_parts = _build_gemini_parts_from_request(prompt_text, request_data.document_images)
+
+    # Configure generation parameters for better results
+    generation_config = GenerationConfig(temperature=0.1, max_output_tokens=1024)
+
+    # Try each model in sequence until one works
+    last_error = None
+    raw_response_text = None
+
+    for model_name in model_names:
+        try:
+            logger.info(f"Attempting to use model: {model_name} for document classification")
+            model = GenerativeModel(model_name)
+
+            # All models in our list are vision-capable
+            response = await model.generate_content_async(gemini_parts, generation_config=generation_config)
+            raw_response_text = response.text
+            logger.debug(f"Raw model response for document classification (job {request_data.job_no}): {raw_response_text}")
+
+            # Try to extract JSON from the response
+            try:
+                # First try direct JSON parsing
+                classification_data = json.loads(raw_response_text)
+            except json.JSONDecodeError:
+                # If that fails, try to extract JSON from the text
+                import re
+                json_match = re.search(r'({[\s\S]*})', raw_response_text)
+                if json_match:
+                    try:
+                        classification_data = json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        # If still failing, try a more lenient approach
+                        logger.warning(f"Could not parse JSON directly. Attempting to extract classification manually.")
+                        classification_data = {}
+
+                        # Look for document type
+                        doc_type_match = re.search(r'documentType["\']?\s*:\s*["\']?(\w+)["\']?', raw_response_text)
+                        if doc_type_match:
+                            classification_data["documentType"] = doc_type_match.group(1)
+                        else:
+                            classification_data["documentType"] = "UNKNOWN"
+
+                        # Look for confidence
+                        confidence_match = re.search(r'confidence["\']?\s*:\s*([0-9.]+)', raw_response_text)
+                        if confidence_match:
+                            classification_data["confidence"] = float(confidence_match.group(1))
+                        else:
+                            classification_data["confidence"] = 0.0
+
+                        # Look for reasoning
+                        reasoning_match = re.search(r'reasoning["\']?\s*:\s*["\']?(.*?)["\']?[,}]', raw_response_text)
+                        if reasoning_match:
+                            classification_data["reasoning"] = reasoning_match.group(1)
+                        else:
+                            classification_data["reasoning"] = "No reasoning provided"
+                else:
+                    # If we can't extract JSON, look for keywords in the response
+                    if "salesquote" in raw_response_text.lower() or "sales quote" in raw_response_text.lower():
+                        classification_data = {"documentType": "SalesQuote", "confidence": 0.7, "reasoning": "Extracted from text response"}
+                    elif "proformainvoice" in raw_response_text.lower() or "proforma invoice" in raw_response_text.lower():
+                        classification_data = {"documentType": "ProformaInvoice", "confidence": 0.7, "reasoning": "Extracted from text response"}
+                    elif "jobconsumption" in raw_response_text.lower() or "job consumption" in raw_response_text.lower() or "job shipment" in raw_response_text.lower():
+                        classification_data = {"documentType": "JobConsumption", "confidence": 0.7, "reasoning": "Extracted from text response"}
+                    else:
+                        classification_data = {"documentType": "UNKNOWN", "confidence": 0.0, "reasoning": "Could not determine document type"}
+
+            # Normalize the document type
+            if "documentType" in classification_data:
+                doc_type = classification_data["documentType"]
+                if isinstance(doc_type, str):
+                    doc_type = doc_type.strip()
+                    # Normalize to expected values
+                    if doc_type.lower() in ["salesquote", "sales quote", "sq"]:
+                        classification_data["documentType"] = "SalesQuote"
+                    elif doc_type.lower() in ["proformainvoice", "proforma invoice", "proforma", "pi"]:
+                        classification_data["documentType"] = "ProformaInvoice"
+                    elif doc_type.lower() in ["jobconsumption", "job consumption", "job shipment", "jobshipment", "jc"]:
+                        classification_data["documentType"] = "JobConsumption"
+                    else:
+                        classification_data["documentType"] = "UNKNOWN"
+            else:
+                classification_data["documentType"] = "UNKNOWN"
+
+            # Ensure confidence is a float
+            if "confidence" in classification_data:
+                try:
+                    classification_data["confidence"] = float(classification_data["confidence"])
+                except (ValueError, TypeError):
+                    classification_data["confidence"] = 0.0
+            else:
+                classification_data["confidence"] = 0.0
+
+            # Ensure reasoning is a string
+            if "reasoning" not in classification_data or not classification_data["reasoning"]:
+                classification_data["reasoning"] = "No reasoning provided"
+
+            # If we get here, the model worked
+            logger.info(f"Successfully used model: {model_name} for document classification")
+            return schemas.ClassificationResponse(
+                document_type=classification_data["documentType"],
+                confidence=classification_data["confidence"],
+                reasoning=classification_data["reasoning"]
+            )
+
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Failed to use model {model_name} for document classification: {e}")
+            continue  # Try the next model
+
+    # If we get here, all models failed
+    error_message = f"All Gemini models failed for document classification. Last error: {str(last_error)}"
+    logger.error(error_message)
+    return schemas.ClassificationResponse(
+        document_type="UNKNOWN",
+        confidence=0.0,
+        error_message=error_message
+    )
+
 async def verify_document_with_gemini(
     request_data: schemas.VerificationRequest
 ) -> schemas.VerificationResponse:

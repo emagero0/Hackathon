@@ -47,6 +47,8 @@ public class BusinessCentralService {
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<ODataListResponseWrapper<SalesInvoiceLineDTO>> SALES_INVOICE_LINE_LIST_TYPE =
             new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<ODataListResponseWrapper<JobAttachmentLinksDTO>> JOB_ATTACHMENT_LINKS_TYPE =
+            new ParameterizedTypeReference<>() {};
 
     public BusinessCentralService(
             WebClient.Builder webClientBuilder,
@@ -278,6 +280,40 @@ public class BusinessCentralService {
         });
     }
 
+
+    /**
+     * Fetches job attachment links from Business Central.
+     *
+     * @param jobNo The job number to fetch attachments for
+     * @return A Mono containing the JobAttachmentLinksDTO
+     */
+    public Mono<JobAttachmentLinksDTO> fetchJobAttachmentLinks(String jobNo) {
+        log.info("Fetching Job Attachment Links for Job No: {}", jobNo);
+
+        String endpointPath = "/JobAttachmentLinks";
+        String filterQuery = "No eq '" + jobNo + "'";
+        String filterQueryParam = "$filter";
+
+        return this.webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(endpointPath)
+                        .queryParam(filterQueryParam, filterQuery)
+                        .build())
+                .header(HttpHeaders.AUTHORIZATION, this.basicAuthHeader)
+                .retrieve()
+                .onStatus(HttpStatus.UNAUTHORIZED::equals, response ->
+                    handleError(response, "Unauthorized access fetching Job Attachment Links for Job No: " + jobNo)
+                )
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(), response ->
+                    handleError(response, "Error fetching Job Attachment Links for Job No: " + jobNo)
+                )
+                .bodyToMono(JOB_ATTACHMENT_LINKS_TYPE)
+                .map(wrapper -> extractSingleResult(wrapper, "Job Attachment Links", jobNo))
+                .onErrorResume(e -> {
+                    log.error("Failed to fetch job attachment links for job {}: {}", jobNo, e.getMessage());
+                    return Mono.error(new RuntimeException("Failed to fetch job attachment links for job " + jobNo, e));
+                });
+    }
 
     // --- Update Method ---
 

@@ -14,6 +14,10 @@ The following environment variables need to be set before running the applicatio
 - `DYNAMICS_BC_USERNAME`: Business Central API username (defaults to "webservice" if not set)
 - `DYNAMICS_BC_API_KEY`: Business Central API key
 
+### SharePoint Configuration
+- `SHAREPOINT_USERNAME`: SharePoint username (defaults to "icttest@dayliff.com" if not set)
+- `SHAREPOINT_PASSWORD`: SharePoint password
+
 ### RabbitMQ Configuration (Optional)
 - `RABBITMQ_USERNAME`: RabbitMQ username (defaults to "guest" if not set)
 - `RABBITMQ_PASSWORD`: RabbitMQ password (defaults to "guest" if not set)
@@ -27,6 +31,8 @@ set DB_USERNAME=your_db_username
 set DB_PASSWORD=your_db_password
 set DYNAMICS_BC_USERNAME=your_bc_username
 set DYNAMICS_BC_API_KEY=your_bc_api_key
+set SHAREPOINT_USERNAME=your_sharepoint_username
+set SHAREPOINT_PASSWORD=your_sharepoint_password
 ```
 
 ### For Linux/macOS
@@ -36,6 +42,8 @@ export DB_USERNAME=your_db_username
 export DB_PASSWORD=your_db_password
 export DYNAMICS_BC_USERNAME=your_bc_username
 export DYNAMICS_BC_API_KEY=your_bc_api_key
+export SHAREPOINT_USERNAME=your_sharepoint_username
+export SHAREPOINT_PASSWORD=your_sharepoint_password
 ```
 
 ### For Docker
@@ -50,6 +58,8 @@ services:
       - DB_PASSWORD=your_db_password
       - DYNAMICS_BC_USERNAME=your_bc_username
       - DYNAMICS_BC_API_KEY=your_bc_api_key
+      - SHAREPOINT_USERNAME=your_sharepoint_username
+      - SHAREPOINT_PASSWORD=your_sharepoint_password
 ```
 
 ## Google Cloud Service Account Setup

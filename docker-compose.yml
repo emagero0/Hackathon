@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   mysql-db:
@@ -15,7 +15,17 @@ services:
     networks:
       - erp-network
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${DB_PASSWORD}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,7 +36,7 @@ services:
     environment:
       TZ: "Africa/Nairobi"
     ports:
-      - "5672:5672"  # AMQP port
+      - "5672:5672" # AMQP port
       - "15672:15672" # Management UI port
     networks:
       - erp-network
@@ -43,6 +53,8 @@ services:
     container_name: backend-container
     ports:
       - "8081:8081" # Matching server.port in application.properties
+    env_file:
+      - .env
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/aierpdb?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=Africa/Nairobi&allowPublicKeyRetrieval=true
       DB_USERNAME: "${DB_USERNAME:-root}"
@@ -109,7 +121,7 @@ services:
     environment:
       TZ: "Africa/Nairobi"
     ports:
-      - "80:80"
+      - "3000:80"
     depends_on:
       - backend
     networks:

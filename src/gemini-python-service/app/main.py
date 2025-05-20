@@ -62,6 +62,22 @@ async def verify_document(request: schemas.VerificationRequest):
         logger.error(f"Unhandled exception in /verify_document endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
+@app.post("/classify_document", response_model=schemas.ClassificationResponse)
+async def classify_document(request: schemas.ClassificationRequest):
+    """
+    Classifies a document as Sales Quote, ProformaInvoice, or Job Consumption.
+    """
+    logger.info(f"Received request for /classify_document for job_no: {request.job_no}")
+    try:
+        response_data = await services.classify_document_with_gemini(request)
+        if response_data.error_message:
+            logger.error(f"Error in classify_document_with_gemini: {response_data.error_message}")
+            raise HTTPException(status_code=500, detail=response_data.error_message)
+        return response_data
+    except Exception as e:
+        logger.error(f"Unhandled exception in /classify_document endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
 @app.get("/health", summary="Health Check")
 def health_check():
     """

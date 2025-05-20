@@ -1,0 +1,100 @@
+# Document Verification System with AI
+
+This project implements an advanced document verification system that uses AI to verify ERP job documents by comparing data between Microsoft Dynamics 365 Business Central and associated PDF documents (Job Consumption, Proforma Invoice, Sales Quote).
+
+## Key Features
+
+- **AI-Powered Document Verification**: Uses Google Gemini 2.0 models for intelligent document analysis and verification
+- **Automatic Document Classification**: Classifies uploaded documents by type using AI
+- **SharePoint Integration**: Automatically retrieves documents from SharePoint
+- **Business Central Integration**: Fetches job data via Business Central OData API
+- **Comprehensive Verification**: Checks document numbers, customer information, line items, and signatures
+- **Asynchronous Processing**: Handles verification requests in the background
+- **Transaction Management**: Robust transaction handling for reliable document processing
+- **Web Dashboard**: Monitor verification status and results
+
+## Recent Improvements
+
+- **Fixed Document Handling Issues**: Resolved issues with document classification and type updates
+- **Enhanced Transaction Management**: Improved transaction boundaries and synchronization
+- **Duplicate Prevention**: Added unique constraints to prevent duplicate documents
+- **Improved Document Retrieval**: Always retrieves the most recent document version
+- **Better Error Handling**: Added comprehensive error handling and recovery mechanisms
+
+## Technology Stack
+
+### Backend
+- Java 17 with Spring Boot
+- Spring Data JPA for database access
+- Spring WebFlux for reactive programming
+- MySQL database
+
+### AI Service
+- Python with FastAPI
+- Google Gemini 2.0 models
+- Image processing with Pillow
+
+### Frontend
+- React with TypeScript
+- Tailwind CSS
+- Recharts for data visualization
+
+## Getting Started
+
+### Prerequisites
+
+- Java JDK 17+
+- Maven 3.8+
+- MySQL 8.0+
+- Python 3.10+
+- Node.js 18+
+- Google Cloud account with Vertex AI API access
+
+### Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/emagero0/Hackathon.git
+   cd Hackathon
+   ```
+
+2. **Configure the database**
+   - Create a MySQL database
+   - Update `src/backend/src/main/resources/application.properties` with your database credentials
+
+3. **Configure Business Central and SharePoint access**
+   - Update the credentials in `application.properties`
+
+4. **Configure the AI service**
+   - Set up your Google Cloud credentials
+   - Install Python dependencies: `pip install -r requirements.txt`
+
+5. **Run the application**
+   - Backend: `cd src/backend && mvn spring-boot:run`
+   - AI Service: `cd src/gemini-python-service && python -m app.main`
+   - Frontend: `cd src/frontend && npm install && npm run dev`
+
+## Architecture
+
+The system follows a microservice architecture:
+
+1. **Java Backend**: Handles business logic, database operations, and orchestrates the verification process
+2. **Python AI Service**: Processes documents using Google Gemini models
+3. **React Frontend**: Provides user interface for monitoring and triggering verifications
+
+## Document Processing Flow
+
+1. Documents are retrieved from SharePoint or uploaded directly
+2. Documents are classified by type using AI
+3. Key information is extracted from documents
+4. Business Central data is fetched for comparison
+5. Documents are verified against Business Central data
+6. Results are stored and displayed to users
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
