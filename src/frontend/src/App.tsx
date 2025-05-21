@@ -1,9 +1,12 @@
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+"use client"
+
+import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom"
+import { useState, useEffect } from "react"
 import { SidebarProvider, SidebarInset } from "./components/ui/sidebar"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
 import { AppSidebar } from "./components/app-sidebar"
+import Home from "./pages/home.tsx"
 import Dashboard from "./pages/dashboard"
 import Jobs from "./pages/Jobs"
 import JobDetail from "./pages/JobDetail"
@@ -17,9 +20,9 @@ import { setupAxiosInterceptors, isAuthenticated as checkAuthentication, getCurr
 
 // Match the User interface from login.tsx
 interface User {
-  username: string;
-  password: string;
-  role: string;
+  username: string
+  password: string
+  role: string
 }
 
 function App() {
@@ -57,36 +60,46 @@ function App() {
   }
 
   return (
-    <Router>
-      <ThemeProvider defaultTheme="system" storageKey="ui-theme">
-        {isAuthenticated ? (
-          <SidebarProvider>
-            <div className="flex w-full h-screen">
-              <AppSidebar userRole={userRole} onLogout={handleLogout} />
-              <SidebarInset className="flex-1 overflow-auto">
-                <MobileSidebarTrigger />
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/jobs" element={<Jobs />} />
-                  <Route path="/jobs/:id" element={<JobDetail />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                  <Route path="/job-verification" element={<JobVerification />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </SidebarInset>
-            </div>
-            <Toaster />
-          </SidebarProvider>
-        ) : (
+      <Router>
+        <ThemeProvider defaultTheme="system" storageKey="ui-theme">
           <Routes>
+            {/* Public routes that don't require authentication */}
+            <Route path="/" element={<Home onLogin={() => (window.location.href = "/login")} />} />
             <Route path="/login" element={<Login onLogin={handleLogin} />} />
             <Route path="/register" element={<Register />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
+
+            {/* Protected routes that require authentication */}
+            {isAuthenticated ? (
+                <Route
+                    path="/*"
+                    element={
+                      <SidebarProvider>
+                        <div className="flex w-full h-screen">
+                          <AppSidebar userRole={userRole} onLogout={handleLogout} />
+                          <SidebarInset className="flex-1 overflow-auto">
+                            <MobileSidebarTrigger />
+                            <Routes>
+                              <Route path="/dashboard" element={<Dashboard />} />
+                              <Route path="/jobs" element={<Jobs />} />
+                              <Route path="/jobs/:id" element={<JobDetail />} />
+                              <Route path="/analytics" element={<Analytics />} />
+                              <Route path="/job-verification" element={<JobVerification />} />
+                              <Route path="/settings" element={<Settings />} />
+                              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                            </Routes>
+                          </SidebarInset>
+                        </div>
+                        <Toaster />
+                      </SidebarProvider>
+                    }
+                />
+            ) : (
+                // Redirect to login for protected routes when not authenticated
+                <Route path="/*" element={<Navigate to="/login" replace />} />
+            )}
           </Routes>
-        )}
-      </ThemeProvider>
-    </Router>
+        </ThemeProvider>
+      </Router>
   )
 }
 
