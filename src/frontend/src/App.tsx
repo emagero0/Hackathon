@@ -38,7 +38,7 @@ function App() {
   }, [])
 
   const handleLogin = (user: User) => {
-    localStorage.setItem("token", "dummy-token") // In real app, use actual JWT token
+    localStorage.setItem("token", "token") // In real app, use actual JWT token
     localStorage.setItem("userRole", user.role)
     setIsAuthenticated(true)
     setUserRole(user.role)
