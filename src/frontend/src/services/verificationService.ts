@@ -49,4 +49,39 @@ export const triggerVerification = async (jobNo: string): Promise<TriggerRespons
   }
 };
 
-// Add other verification-related API calls here if needed (e.g., get status by ID)
+// Define the type for a job pending second check (matching the backend JobListDTO)
+export interface JobPendingSecondCheck {
+  no: string;
+  firstCheckDate: string;
+  secondCheckBy: string;
+  description: string;
+  billToName: string;
+}
+
+/**
+ * Fetches jobs pending second check from Business Central.
+ * @returns Promise resolving to an array of JobPendingSecondCheck
+ */
+export const fetchJobsPendingSecondCheck = async (): Promise<JobPendingSecondCheck[]> => {
+  try {
+    const response = await axios.get<JobPendingSecondCheck[]>(`${API_BASE_URL}/verifications/jobs-pending-second-check`);
+    console.log('Raw response from jobs-pending-second-check:', response);
+
+    // Ensure we have an array of jobs with proper job numbers
+    const jobs = response.data.map(job => {
+      // Make sure job.no is a string
+      if (job.no === undefined || job.no === null) {
+        console.error('Job has no "no" property:', job);
+        return { ...job, no: 'Unknown' };
+      }
+      return { ...job, no: String(job.no).trim() };
+    });
+
+    console.log('Processed jobs from backend:', jobs);
+    return jobs;
+  } catch (error) {
+    console.error('Error fetching jobs pending second check:', error);
+    // Re-throw the error so the component can handle it
+    throw error;
+  }
+};

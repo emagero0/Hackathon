@@ -1,5 +1,6 @@
 package com.erp.aierpbackend.service;
 
+import com.erp.aierpbackend.dto.ClassifyAndVerifyResultDTO;
 import com.erp.aierpbackend.dto.gemini.DocumentClassificationResult;
 import com.erp.aierpbackend.dto.gemini.GeminiVerificationResult; // Reusing DTO, consider renaming later
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -16,6 +17,7 @@ import java.io.IOException; // Keep for method signature, though WebClient uses 
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -95,13 +97,30 @@ public class LLMProxyService {
         }
     }
 
+    // Request payload for combined classification and verification
+    private static class ClassifyAndVerifyRequestPayload {
+        public String job_no;
+        public List<DocumentImagePayload> document_images;
+        public Map<String, Object> erp_data;
 
-    public Map<String, String> extractDocumentIdentifiers(
+        public ClassifyAndVerifyRequestPayload(String job_no, List<DocumentImagePayload> document_images, Map<String, Object> erp_data) {
+            this.job_no = job_no;
+            this.document_images = document_images;
+            this.erp_data = erp_data;
+        }
+    }
+
+
+    /**
+     * @deprecated Use the new extractDocumentIdentifiers method that uses the classify_and_verify endpoint
+     */
+    @Deprecated
+    private Map<String, String> extractDocumentIdentifiersLegacy(
             String jobNo,
             String documentType,
-            List<byte[]> documentImageBytesList // Changed from documentImages to avoid confusion
-    ) throws IOException { // Keep IOException for now for compatibility with JobDocumentVerificationService
-        log.info("LLMProxyService: Starting identifier extraction for Job No: {}, Document Type: {}", jobNo, documentType);
+            List<byte[]> documentImageBytesList
+    ) throws IOException {
+        log.info("LLMProxyService: Starting legacy identifier extraction for Job No: {}, Document Type: {}", jobNo, documentType);
 
         if (documentImageBytesList == null || documentImageBytesList.isEmpty()) {
             log.warn("No document images provided for identifier extraction. Job No: {}, Document Type: {}", jobNo, documentType);
@@ -240,5 +259,153 @@ public class LLMProxyService {
             log.error("Error calling LLM service for document verification (job {}): {}", jobNo, e.getMessage(), e);
             throw new IOException("Failed to call LLM service for document verification: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Classifies and verifies a document in a single step using the LLM service.
+     * The document remains UNCLASSIFIED in the system, but the LLM identifies the type
+     * and performs verification against the appropriate ERP data.
+     *
+     * This method has been enhanced to support two modes:
+     * 1. Initial classification mode: When erpData only contains jobNo, it focuses on extracting document identifiers
+     * 2. Verification mode: When erpData contains Business Central data, it performs full verification
+     *
+     * @param jobNo The job number
+     * @param documentImageBytesList List of document images as byte arrays
+     * @param erpData Map containing all ERP data for different document types
+     * @return ClassifyAndVerifyResultDTO containing both classification and verification results
+     * @throws IOException If there is an error communicating with the LLM service
+     */
+    public ClassifyAndVerifyResultDTO classifyAndVerifyDocument(
+            String jobNo,
+            List<byte[]> documentImageBytesList,
+            Map<String, Object> erpData
+    ) throws IOException {
+        // Determine if this is the initial classification step or the verification step
+        boolean isInitialClassification = erpData.size() == 1 && erpData.containsKey("jobNo");
+
+        if (isInitialClassification) {
+            log.info("LLMProxyService: Starting initial classification and identifier extraction for Job No: {}", jobNo);
+        } else {
+            log.info("LLMProxyService: Starting full verification with Business Central data for Job No: {}", jobNo);
+        }
+
+        if (documentImageBytesList == null || documentImageBytesList.isEmpty()) {
+            log.warn("No document images provided for classification and verification. Job No: {}", jobNo);
+            return ClassifyAndVerifyResultDTO.builder()
+                    .documentType("UNKNOWN")
+                    .classificationConfidence(0.0)
+                    .errorMessage("No document images provided")
+                    .build();
+        }
+
+        List<DocumentImagePayload> imagePayloads = documentImageBytesList.stream()
+                .map(bytes -> new DocumentImagePayload(Base64.getEncoder().encodeToString(bytes), "image/png"))
+                .collect(Collectors.toList());
+
+        ClassifyAndVerifyRequestPayload payload = new ClassifyAndVerifyRequestPayload(jobNo, imagePayloads, erpData);
+
+        try {
+            // Use a longer timeout for verification mode
+            int timeoutSeconds = isInitialClassification ? 60 : 120;
+
+            ClassifyAndVerifyResultDTO response = webClient.post()
+                    .uri("/classify_and_verify")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToMono(ClassifyAndVerifyResultDTO.class)
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
+                    .block(Duration.ofSeconds(timeoutSeconds + 5)); // Blocking with timeout
+
+            if (response != null) {
+                if (response.getErrorMessage() != null && !response.getErrorMessage().isEmpty()) {
+                    log.error("Error from LLM service (classify_and_verify) for job {}: {}", jobNo, response.getErrorMessage());
+                    throw new IOException("LLM service error: " + response.getErrorMessage());
+                }
+
+                if (isInitialClassification) {
+                    log.info("Successfully classified document and extracted identifiers for Job No: '{}', Document Type: '{}'",
+                            jobNo, response.getDocumentType());
+                } else {
+                    log.info("Successfully verified document for Job No: '{}', Document Type: '{}', Verification Confidence: {}",
+                            jobNo, response.getDocumentType(), response.getOverallVerificationConfidence());
+                }
+
+                return response;
+            } else {
+                log.error("No response from LLM service (classify_and_verify) for job {}", jobNo);
+                throw new IOException("No response from LLM service for document classification and verification.");
+            }
+        } catch (Exception e) {
+            log.error("Error calling LLM service for document classification and verification (job {}): {}",
+                    jobNo, e.getMessage(), e);
+            throw new IOException("Failed to call LLM service for document classification and verification: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Batch processes multiple documents to extract identifiers in a single call.
+     * This method is optimized for the initial phase of document processing where we need
+     * to extract key identifiers (sales quote number, invoice number) from all documents.
+     *
+     * @param jobNo The job number
+     * @param documentImagesBytesList List of document images as byte arrays
+     * @return ClassifyAndVerifyResultDTO containing extracted identifiers
+     * @throws IOException If there is an error communicating with the LLM service
+     */
+    public ClassifyAndVerifyResultDTO batchExtractDocumentIdentifiers(
+            String jobNo,
+            List<byte[]> documentImagesBytesList
+    ) throws IOException {
+        log.info("LLMProxyService: Starting batch identifier extraction for Job No: {}", jobNo);
+
+        // Create minimal ERP data with just the job number
+        Map<String, Object> minimalErpData = Collections.singletonMap("jobNo", jobNo);
+
+        // Use the existing classifyAndVerifyDocument method with minimal ERP data
+        // This will trigger the initial classification mode
+        return classifyAndVerifyDocument(jobNo, documentImagesBytesList, minimalErpData);
+    }
+
+    /**
+     * Extracts document identifiers from a specific document type.
+     * This method is used when we need to extract identifiers from a specific document type
+     * after the initial batch processing.
+     *
+     * @param jobNo The job number
+     * @param documentType The document type (SalesQuote, ProformaInvoice, JobConsumption)
+     * @param documentImagesBytesList List of document images as byte arrays
+     * @return Map of field names to extracted values
+     * @throws IOException If there is an error communicating with the LLM service
+     */
+    public Map<String, String> extractDocumentIdentifiers(
+            String jobNo,
+            String documentType,
+            List<byte[]> documentImagesBytesList
+    ) throws IOException {
+        log.info("LLMProxyService: Extracting identifiers for document type: {} for Job No: {}", documentType, jobNo);
+
+        // Create minimal ERP data with just the job number
+        Map<String, Object> minimalErpData = new HashMap<>();
+        minimalErpData.put("jobNo", jobNo);
+        minimalErpData.put("documentType", documentType);
+
+        // Use the existing classifyAndVerifyDocument method with minimal ERP data
+        ClassifyAndVerifyResultDTO result = classifyAndVerifyDocument(jobNo, documentImagesBytesList, minimalErpData);
+
+        // Extract the identifiers from the result
+        Map<String, String> extractedIdentifiers = new HashMap<>();
+        if (result != null && result.getFieldConfidences() != null) {
+            for (ClassifyAndVerifyResultDTO.FieldConfidenceDTO field : result.getFieldConfidences()) {
+                if (field.getExtractedValue() != null && !field.getExtractedValue().isBlank()) {
+                    extractedIdentifiers.put(field.getFieldName(), field.getExtractedValue());
+                    log.info("Extracted {} = {} from {} document for Job No: {}",
+                            field.getFieldName(), field.getExtractedValue(), documentType, jobNo);
+                }
+            }
+        }
+
+        return extractedIdentifiers;
     }
 }

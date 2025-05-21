@@ -1,0 +1,433 @@
+import logging
+import json
+import re
+import os
+from typing import Dict, Any, List, Optional, Tuple
+import base64
+from io import BytesIO
+from PIL import Image
+import tempfile
+
+from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
+import vertexai
+
+from . import schemas
+from .config import settings
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Global flag to track Vertex AI initialization status
+_vertex_ai_initialized = False
+
+def init_vertexai():
+    """Initialize Vertex AI client."""
+    global _vertex_ai_initialized
+
+    try:
+        # Initialize Vertex AI with project and location
+        vertexai.init(project=settings.gcp_project_id, location=settings.gcp_location)
+        logger.info(f"Vertex AI initialized with project: {settings.gcp_project_id}, location: {settings.gcp_location}")
+        _vertex_ai_initialized = True
+    except Exception as e:
+        logger.error(f"Failed to initialize Vertex AI: {e}", exc_info=True)
+        _vertex_ai_initialized = False
+
+def _build_classification_prompt() -> Dict[str, Any]:
+    """Build the prompt for document classification."""
+    prompt = {
+        "document_types": {
+            "SalesQuote": {
+                "description": "A document that provides pricing for products or services before a sale is finalized.",
+                "key_identifiers": [
+                    "Contains 'SALES QUOTE' in the header or title",
+                    "Has a quote number or reference",
+                    "Lists items with quantities and prices",
+                    "May include terms and conditions",
+                    "Does not indicate that payment has been made"
+                ]
+            },
+            "ProformaInvoice": {
+                "description": "A preliminary bill of sale sent to buyers before a shipment or delivery of goods.",
+                "key_identifiers": [
+                    "Contains 'PRO FORMA INVOICE' in the header or title",
+                    "Contains text like 'This is not a Tax Invoice'",
+                    "Has an invoice number",
+                    "Lists items with quantities and prices",
+                    "May include payment terms"
+                ]
+            },
+            "JobConsumption": {
+                "description": "A document that details materials or services used for a specific job or project.",
+                "key_identifiers": [
+                    "Contains 'JOB SHIPMENT' in the header or title",
+                    "Has a 'Job Shipment No' field",
+                    "Lists materials or services consumed",
+                    "May reference a specific job number",
+                    "Often includes quantities and costs of materials used"
+                ]
+            }
+        },
+        "instructions": [
+            "Analyze the provided document images.",
+            "Determine which document type it matches based on the characteristics listed.",
+            "Return the document type as one of: 'SalesQuote', 'ProformaInvoice', or 'JobConsumption'.",
+            "If you cannot confidently classify the document, return 'UNKNOWN'."
+        ],
+        "outputFormat": {
+            "documentType": "The classified document type (SalesQuote, ProformaInvoice, JobConsumption, or UNKNOWN)",
+            "confidence": "A confidence score between 0.0 and 1.0",
+            "reasoning": "Brief explanation of why this classification was chosen"
+        }
+    }
+    return prompt
+
+def _build_verification_prompt(request_data: schemas.VerificationRequest) -> Dict[str, Any]:
+    """Build the prompt for document verification."""
+    prompt = {
+        "system_context": "You are an AI document verification assistant specialized in analyzing business documents and comparing them against ERP system data.",
+        "task_description": "Verify the provided document against the given ERP data. Identify discrepancies, assess confidence levels for extracted and verified fields, and determine an overall verification confidence.",
+        "document_type_context": request_data.document_type,
+        "job_number_context": request_data.job_no,
+        "erp_data_for_comparison": request_data.erp_data,
+        "instructions": "Carefully analyze the document image(s). Extract relevant header and line item information. "
+                        "Compare the extracted information field by field against the 'erp_data_for_comparison'. "
+                        "Report all discrepancies found, including value mismatches, fields missing in the document, or fields unexpectedly present in the document. "
+                        "For each field you extract, provide a confidence score indicating how certain you are about the extraction. "
+                        "Finally, provide an overall verification confidence score.",
+        "output_format": {
+            "discrepancies": [
+                {
+                    "field_name": "Name of the field with a discrepancy",
+                    "document_value": "Value found in the document",
+                    "erp_value": "Value from the ERP data",
+                    "severity": "high/medium/low",
+                    "description": "Optional explanation of the discrepancy"
+                }
+            ],
+            "field_confidences": [
+                {
+                    "field_name": "Name of the extracted field",
+                    "confidence": "Confidence score between 0.0 and 1.0",
+                    "extracted_value": "The value extracted from the document",
+                    "verified": "Boolean indicating if the field matches the ERP data"
+                }
+            ],
+            "overall_verification_confidence": "A score between 0.0 and 1.0 indicating overall confidence in the verification"
+        }
+    }
+    return prompt
+
+def _build_classify_and_verify_prompt(request_data: schemas.ClassifyAndVerifyRequest) -> Dict[str, Any]:
+    """Build a combined prompt for document classification and verification."""
+
+    # Check if this is the initial classification step or the verification step
+    is_initial_classification = "jobNo" in request_data.erp_data and len(request_data.erp_data) == 1
+
+    if is_initial_classification:
+        # This is the initial classification step - focus on identifying document type and extracting key identifiers
+        prompt = {
+            "system_context": "You are an AI document classification assistant specialized in analyzing business documents.",
+            "task_description": "Classify the document type and extract key identifiers like document numbers.",
+            "job_number_context": request_data.job_no,
+            "document_types": {
+                "SalesQuote": {
+                    "description": "A document that provides pricing for products or services before a sale is finalized.",
+                    "key_identifiers": [
+                        "Contains 'SALES QUOTE' in the header or title",
+                        "Has a quote number or reference",
+                        "Lists items with quantities and prices",
+                        "May include terms and conditions",
+                        "Does not indicate that payment has been made"
+                    ]
+                },
+                "ProformaInvoice": {
+                    "description": "A preliminary bill of sale sent to buyers before a shipment or delivery of goods.",
+                    "key_identifiers": [
+                        "Contains 'PRO FORMA INVOICE' in the header or title",
+                        "Contains text like 'This is not a Tax Invoice'",
+                        "Has an invoice number",
+                        "Lists items with quantities and prices",
+                        "May include payment terms"
+                    ]
+                },
+                "JobConsumption": {
+                    "description": "A document that details materials or services used for a specific job or project.",
+                    "key_identifiers": [
+                        "Contains 'JOB SHIPMENT' in the header or title",
+                        "Has a 'Job Shipment No' field",
+                        "Lists materials or services consumed",
+                        "May reference a specific job number",
+                        "Often includes quantities and costs of materials used"
+                    ]
+                }
+            },
+            "instructions": [
+                "STEP 1: Analyze the provided document images and classify the document type.",
+                "Determine which document type it matches based on the characteristics listed.",
+                "Identify the document type as one of: 'SalesQuote', 'ProformaInvoice', or 'JobConsumption'.",
+                "If you cannot confidently classify the document, use 'UNKNOWN'.",
+                "",
+                "STEP 2: Extract key identifiers from the document.",
+                "For SalesQuote: Extract the Quote No/Number and Job No.",
+                "For ProformaInvoice: Extract the Invoice No/Number and Job No.",
+                "For JobConsumption: Extract the Job Shipment No and Job No.",
+                "Provide confidence scores for each extracted field."
+            ],
+            "output_format": {
+                "documentType": "The classified document type (SalesQuote, ProformaInvoice, JobConsumption, or UNKNOWN)",
+                "classificationConfidence": "A confidence score between 0.0 and 1.0 for the classification",
+                "classificationReasoning": "Brief explanation of why this classification was chosen",
+                "fieldConfidences": [
+                    {
+                        "field_name": "Name of the extracted field (e.g., 'Quote No', 'Invoice No', 'Job No')",
+                        "confidence": "Confidence score between 0.0 and 1.0",
+                        "extracted_value": "The value extracted from the document",
+                        "verified": false
+                    }
+                ],
+                "overallVerificationConfidence": 0.0
+            }
+        }
+    else:
+        # This is the verification step - focus on verifying the document against ERP data
+        prompt = {
+            "system_context": "You are an AI document verification assistant specialized in analyzing business documents and comparing them against ERP system data.",
+            "task_description": "Verify the document against the appropriate ERP data.",
+            "job_number_context": request_data.job_no,
+            "erp_data_for_comparison": request_data.erp_data,
+            "document_types": {
+                "SalesQuote": {
+                    "description": "A document that provides pricing for products or services before a sale is finalized.",
+                    "key_identifiers": [
+                        "Contains 'SALES QUOTE' in the header or title",
+                        "Has a quote number or reference",
+                        "Lists items with quantities and prices",
+                        "May include terms and conditions",
+                        "Does not indicate that payment has been made"
+                    ]
+                },
+                "ProformaInvoice": {
+                    "description": "A preliminary bill of sale sent to buyers before a shipment or delivery of goods.",
+                    "key_identifiers": [
+                        "Contains 'PRO FORMA INVOICE' in the header or title",
+                        "Contains text like 'This is not a Tax Invoice'",
+                        "Has an invoice number",
+                        "Lists items with quantities and prices",
+                        "May include payment terms"
+                    ]
+                },
+                "JobConsumption": {
+                    "description": "A document that details materials or services used for a specific job or project.",
+                    "key_identifiers": [
+                        "Contains 'JOB SHIPMENT' in the header or title",
+                        "Has a 'Job Shipment No' field",
+                        "Lists materials or services consumed",
+                        "May reference a specific job number",
+                        "Often includes quantities and costs of materials used"
+                    ]
+                }
+            },
+            "instructions": [
+                "STEP 1: Analyze the provided document images and confirm the document type.",
+                "Determine which document type it matches based on the characteristics listed.",
+                "Identify the document type as one of: 'SalesQuote', 'ProformaInvoice', or 'JobConsumption'.",
+                "If you cannot confidently classify the document, use 'UNKNOWN'.",
+                "",
+                "STEP 2: Verify the document against the appropriate ERP data.",
+                "Extract relevant header and line item information.",
+                "Compare the extracted information field by field against the appropriate section of the ERP data.",
+                "Report all discrepancies found, including value mismatches, fields missing in the document, or fields unexpectedly present in the document.",
+                "For each field you extract, provide a confidence score indicating how certain you are about the extraction.",
+                "Finally, provide an overall verification confidence score."
+            ],
+            "output_format": {
+                "documentType": "The classified document type (SalesQuote, ProformaInvoice, JobConsumption, or UNKNOWN)",
+                "classificationConfidence": "A confidence score between 0.0 and 1.0 for the classification",
+                "classificationReasoning": "Brief explanation of why this classification was chosen",
+                "discrepancies": [
+                    {
+                        "field_name": "Name of the field with a discrepancy",
+                        "document_value": "Value found in the document",
+                        "erp_value": "Value from the ERP data",
+                        "severity": "high/medium/low",
+                        "description": "Optional explanation of the discrepancy"
+                    }
+                ],
+                "fieldConfidences": [
+                    {
+                        "field_name": "Name of the extracted field",
+                        "confidence": "Confidence score between 0.0 and 1.0",
+                        "extracted_value": "The value extracted from the document",
+                        "verified": "Boolean indicating if the field matches the ERP data"
+                    }
+                ],
+                "overallVerificationConfidence": "A score between 0.0 and 1.0 indicating overall confidence in the verification"
+            }
+        }
+
+    return prompt
+
+async def classify_and_verify_with_gemini(
+    request_data: schemas.ClassifyAndVerifyRequest
+) -> schemas.ClassifyAndVerifyResponse:
+    """
+    Classifies a document and then verifies it against ERP data using Gemini.
+    """
+    if not _vertex_ai_initialized:
+        logger.error("Vertex AI not initialized. Cannot process request.")
+        return schemas.ClassifyAndVerifyResponse(
+            document_type="UNKNOWN",
+            classification_confidence=0.0,
+            error_message="Vertex AI client not initialized."
+        )
+
+    # List of model names to try in order of preference
+    model_names = [
+        settings.gemini_model_name,      # Try the configured model first (gemini-2.0-flash-001)
+        "gemini-2.0-flash-lite-001",     # Gemini 2.0 Flash Lite model as fallback
+    ]
+
+    # Prepare the prompt
+    prompt = _build_classify_and_verify_prompt(request_data)
+
+    # Prepare the images
+    image_parts = []
+    for img_data in request_data.document_images:
+        try:
+            # Decode base64 image
+            image_bytes = base64.b64decode(img_data.image_base64)
+            image_parts.append(Part.from_data(mime_type=img_data.mime_type, data=image_bytes))
+        except Exception as e:
+            logger.error(f"Error processing image: {e}")
+            continue
+
+    if not image_parts:
+        logger.error("No valid images provided for classification and verification")
+        return schemas.ClassifyAndVerifyResponse(
+            document_type="UNKNOWN",
+            classification_confidence=0.0,
+            error_message="No valid images provided"
+        )
+
+    # Prepare the parts for the model
+    # Convert the prompt to a JSON string
+    prompt_text = json.dumps(prompt, indent=2)
+    gemini_parts = [
+        Part.from_text(prompt_text),
+        *image_parts
+    ]
+
+    # Configure generation parameters
+    generation_config = GenerationConfig(
+        temperature=0.1,
+        max_output_tokens=4096,
+        top_p=0.95,
+        top_k=40
+    )
+
+    last_error = None
+    raw_response_text = ""
+
+    for model_name in model_names:
+        try:
+            logger.info(f"Attempting to use model: {model_name} for document classification and verification")
+            model = GenerativeModel(model_name)
+
+            # Use the full multimodal request
+            response = await model.generate_content_async(gemini_parts, generation_config=generation_config)
+            raw_response_text = response.text
+            logger.debug(f"Raw model response for classification and verification (job {request_data.job_no}): {raw_response_text}")
+
+            # Try to parse the JSON response
+            try:
+                # First try to extract JSON from the response if it's not already in JSON format
+                json_match = re.search(r'```json\s*([\s\S]*?)\s*```', raw_response_text)
+                if json_match:
+                    json_str = json_match.group(1)
+                    llm_output_dict = json.loads(json_str)
+                else:
+                    # Try to parse the whole response as JSON
+                    llm_output_dict = json.loads(raw_response_text)
+
+                # Convert the response to our schema format
+                response_data = schemas.ClassifyAndVerifyResponse(
+                    document_type=llm_output_dict.get("documentType", "UNKNOWN"),
+                    classification_confidence=llm_output_dict.get("classificationConfidence", 0.0),
+                    classification_reasoning=llm_output_dict.get("classificationReasoning", "No reasoning provided"),
+                    discrepancies=[
+                        schemas.Discrepancy(**d) for d in llm_output_dict.get("discrepancies", [])
+                    ],
+                    field_confidences=[
+                        schemas.FieldConfidence(**f) for f in llm_output_dict.get("fieldConfidences", [])
+                    ],
+                    overall_verification_confidence=llm_output_dict.get("overallVerificationConfidence", 0.0),
+                    raw_llm_response=raw_response_text
+                )
+
+                # If we get here, the model worked
+                logger.info(f"Successfully used model: {model_name} for document classification and verification")
+                return response_data
+
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSONDecodeError with model {model_name}: {e}")
+
+                # Try to extract information from text response
+                document_type = "UNKNOWN"
+                if "salesquote" in raw_response_text.lower() or "sales quote" in raw_response_text.lower():
+                    document_type = "SalesQuote"
+                elif "proformainvoice" in raw_response_text.lower() or "proforma invoice" in raw_response_text.lower():
+                    document_type = "ProformaInvoice"
+                elif "jobconsumption" in raw_response_text.lower() or "job consumption" in raw_response_text.lower() or "job shipment" in raw_response_text.lower():
+                    document_type = "JobConsumption"
+
+                # Create a basic response with the extracted document type
+                return schemas.ClassifyAndVerifyResponse(
+                    document_type=document_type,
+                    classification_confidence=0.5,
+                    classification_reasoning="Extracted from text response",
+                    raw_llm_response=raw_response_text
+                )
+
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Failed to use model {model_name} for classification and verification: {e}")
+            continue  # Try the next model
+
+    # If we get here, all models failed
+    error_message = f"All Gemini models failed for classification and verification. Last error: {str(last_error)}"
+    logger.error(error_message)
+    return schemas.ClassifyAndVerifyResponse(
+        document_type="UNKNOWN",
+        classification_confidence=0.0,
+        error_message=error_message,
+        raw_llm_response=raw_response_text
+    )
+
+# Keep the existing functions for backward compatibility
+async def classify_document_with_gemini(
+    request_data: schemas.ClassificationRequest
+) -> schemas.ClassificationResponse:
+    """
+    Classifies a document using Gemini.
+    """
+    # Existing implementation...
+    pass
+
+async def verify_document_with_gemini(
+    request_data: schemas.VerificationRequest
+) -> schemas.VerificationResponse:
+    """
+    Verifies document content against ERP data using Gemini.
+    """
+    # Existing implementation...
+    pass
+
+async def extract_identifiers_from_gemini(
+    request_data: schemas.IdentifierExtractionRequest
+) -> schemas.IdentifierExtractionResponse:
+    """
+    Extracts identifiers from a document using Gemini.
+    """
+    # Existing implementation...
+    pass

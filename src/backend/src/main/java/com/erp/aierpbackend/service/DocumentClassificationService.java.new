@@ -3,6 +3,7 @@ package com.erp.aierpbackend.service;
 import com.erp.aierpbackend.dto.gemini.DocumentClassificationResult;
 import com.erp.aierpbackend.entity.JobDocument;
 import com.erp.aierpbackend.repository.JobDocumentRepository;
+import com.erp.aierpbackend.service.TemporaryDocumentStorageService.TempDocumentInfo;
 import com.erp.aierpbackend.util.PdfImageConverter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import reactor.core.publisher.Mono;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 
@@ -31,6 +33,7 @@ public class DocumentClassificationService {
     private final JobDocumentService jobDocumentService;
     private final JobDocumentRepository jobDocumentRepository;
     private final PdfImageConverter pdfImageConverter;
+    private final TemporaryDocumentStorageService tempDocumentStorageService;
 
     // Document type constants
     public static final String UNCLASSIFIED_TYPE = "UNCLASSIFIED";
@@ -38,12 +41,6 @@ public class DocumentClassificationService {
     public static final String PROFORMA_INVOICE_TYPE = "ProformaInvoice";
     public static final String JOB_CONSUMPTION_TYPE = "JobConsumption";
 
-    /**
-     * Classifies all unclassified documents for a job.
-     *
-     * @param jobNo The job number
-     * @return Mono containing a map of document IDs to their classified types
-     */
     /**
      * Classifies all unclassified documents for a job.
      * This method blocks until all documents are classified or timeout occurs.
@@ -55,15 +52,36 @@ public class DocumentClassificationService {
     @Transactional(propagation = Propagation.REQUIRED)
     public Map<Long, String> classifyJobDocumentsBlocking(String jobNo, int timeoutSeconds) {
         log.info("Classifying documents for Job No: '{}' with timeout of {} seconds", jobNo, timeoutSeconds);
-
+        
+        // Check if we have temporary documents
+        Map<String, TempDocumentInfo> tempDocs = tempDocumentStorageService.getJobDocuments(jobNo);
+        
+        if (!tempDocs.isEmpty()) {
+            log.info("Found {} temporary documents for Job No: '{}'. Using temporary document classification.", 
+                    tempDocs.size(), jobNo);
+            
+            // Call the temporary document classification method
+            Map<String, String> tempResult = classifyTemporaryDocumentsBlocking(jobNo, timeoutSeconds);
+            
+            // Convert the result to the expected format (Long -> String)
+            // This is just for backward compatibility
+            Map<Long, String> compatResult = new HashMap<>();
+            long counter = 1;
+            for (Map.Entry<String, String> entry : tempResult.entrySet()) {
+                compatResult.put(counter++, entry.getValue());
+            }
+            
+            return compatResult;
+        }
+        
+        // If no temporary documents, fall back to the original method
+        log.info("No temporary documents found for Job No: '{}'. Falling back to database document classification.", jobNo);
+        
         try {
             // First, update any documents that might have been classified but not updated
             int updatedCount = updateDocumentTypesForClassifiedDocuments(jobNo);
             if (updatedCount > 0) {
                 log.info("Updated {} already classified documents for Job No: '{}'", updatedCount, jobNo);
-
-                // No need for delay with proper transaction management
-                log.debug("Document type updates committed with proper transaction management");
             }
 
             // Call the reactive method and block with timeout
@@ -74,14 +92,149 @@ public class DocumentClassificationService {
                 .onErrorReturn(Collections.emptyMap())
                 .block(Duration.ofSeconds(timeoutSeconds + 5)); // Add 5 seconds buffer to the timeout
 
-            // No need for delay with proper transaction management
-            log.debug("Classification changes committed with proper transaction management");
-
             return result;
         } catch (Exception e) {
             log.error("Exception while waiting for document classification for Job No: '{}': {}",
                     jobNo, e.getMessage(), e);
             return Collections.emptyMap();
+        }
+    }
+    
+    /**
+     * Classifies temporary documents for a job.
+     * This method blocks until all documents are classified or timeout occurs.
+     *
+     * @param jobNo The job number
+     * @param timeoutSeconds Maximum time to wait for classification in seconds
+     * @return Map of document IDs to their classified types
+     */
+    public Map<String, String> classifyTemporaryDocumentsBlocking(String jobNo, int timeoutSeconds) {
+        log.info("Classifying temporary documents for Job No: '{}' with timeout of {} seconds", jobNo, timeoutSeconds);
+        
+        try {
+            // Call the reactive method and block with timeout
+            Map<String, String> result = classifyTemporaryDocuments(jobNo)
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .doOnError(e -> log.error("Timeout or error occurred while classifying temporary documents for Job No: '{}': {}",
+                        jobNo, e.getMessage(), e))
+                .onErrorReturn(Collections.emptyMap())
+                .block(Duration.ofSeconds(timeoutSeconds + 5)); // Add 5 seconds buffer to the timeout
+            
+            return result;
+        } catch (Exception e) {
+            log.error("Exception while waiting for temporary document classification for Job No: '{}': {}",
+                    jobNo, e.getMessage(), e);
+            return Collections.emptyMap();
+        }
+    }
+    
+    /**
+     * Classifies temporary documents for a job.
+     *
+     * @param jobNo The job number
+     * @return Mono containing a map of document IDs to their classified types
+     */
+    public Mono<Map<String, String>> classifyTemporaryDocuments(String jobNo) {
+        log.info("Classifying temporary documents for Job No: '{}'", jobNo);
+        
+        // Get all temporary documents for this job
+        Map<String, TempDocumentInfo> tempDocs = tempDocumentStorageService.getJobDocuments(jobNo);
+        
+        if (tempDocs.isEmpty()) {
+            log.warn("No temporary documents found for Job No: '{}'", jobNo);
+            return Mono.just(Collections.emptyMap());
+        }
+        
+        log.info("Found {} temporary documents for Job No: '{}'", tempDocs.size(), jobNo);
+        
+        // Process each document for classification
+        List<Mono<Map.Entry<String, String>>> classificationTasks = new ArrayList<>();
+        
+        for (Map.Entry<String, TempDocumentInfo> entry : tempDocs.entrySet()) {
+            String documentId = entry.getKey();
+            TempDocumentInfo docInfo = entry.getValue();
+            
+            // Convert document to images
+            Mono<List<byte[]>> imagesMono = Mono.fromCallable(() -> convertTempDocumentToImages(docInfo))
+                .onErrorResume(e -> {
+                    log.error("Error converting temporary document to images for Job No: '{}', Document ID: {}: {}",
+                            jobNo, documentId, e.getMessage(), e);
+                    return Mono.just(Collections.emptyList());
+                });
+            
+            // Send to LLM for classification with timeout
+            Mono<Map.Entry<String, String>> classificationMono = imagesMono
+                .flatMap(images -> {
+                    if (images.isEmpty()) {
+                        log.warn("Could not convert temporary document to images for Job No: '{}', Document ID: {}",
+                                jobNo, documentId);
+                        return Mono.just(Map.entry(documentId, UNCLASSIFIED_TYPE));
+                    }
+                    
+                    return llmProxyService.classifyDocument(jobNo, images)
+                        .timeout(Duration.ofSeconds(30)) // Add 30-second timeout for LLM call
+                        .flatMap(classification -> {
+                            String classifiedType = classification.getDocumentType();
+                            log.info("Temporary document classified as '{}' for Job No: '{}', Document ID: {}",
+                                    classifiedType, jobNo, documentId);
+                            
+                            // Update document with classified type
+                            tempDocumentStorageService.updateDocumentType(jobNo, documentId, classifiedType);
+                            
+                            return Mono.just(Map.entry(documentId, classifiedType));
+                        })
+                        .onErrorResume(e -> {
+                            log.error("Error classifying temporary document for Job No: '{}', Document ID: {}: {}",
+                                    jobNo, documentId, e.getMessage(), e);
+                            return Mono.just(Map.entry(documentId, UNCLASSIFIED_TYPE));
+                        });
+                });
+            
+            classificationTasks.add(classificationMono);
+        }
+        
+        // Wait for all classifications to complete with concurrent processing
+        return Flux.mergeSequential(classificationTasks)
+            .collectMap(Map.Entry::getKey, Map.Entry::getValue);
+    }
+    
+    /**
+     * Converts a temporary document to images.
+     *
+     * @param docInfo The document info
+     * @return List of document images as byte arrays
+     * @throws IOException If there's an error converting the document
+     */
+    private List<byte[]> convertTempDocumentToImages(TempDocumentInfo docInfo) throws IOException {
+        log.debug("Converting temporary document to images for Job No: '{}', Document ID: {}",
+                docInfo.getJobNo(), docInfo.getId());
+        
+        // Read the document data from the file
+        byte[] documentData = Files.readAllBytes(Paths.get(docInfo.getFilePath()));
+        
+        if (documentData == null || documentData.length == 0) {
+            log.warn("Temporary document data is empty for Job No: '{}', Document ID: {}",
+                    docInfo.getJobNo(), docInfo.getId());
+            return Collections.emptyList();
+        }
+        
+        String contentType = docInfo.getContentType();
+        if (contentType != null && contentType.equals("application/pdf")) {
+            // For PDF files, convert to images
+            // Create a temporary file
+            Path tempFile = Files.createTempFile("temp_pdf_", ".pdf");
+            Files.write(tempFile, documentData);
+            
+            // Convert PDF to images
+            List<byte[]> images = pdfImageConverter.convertPdfToImages(tempFile.toString(), 300f);
+            
+            // Delete the temporary file
+            Files.delete(tempFile);
+            
+            return images;
+        } else {
+            // For image files, return as is
+            return List.of(documentData);
         }
     }
 

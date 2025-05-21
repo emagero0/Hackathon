@@ -83,14 +83,8 @@ public class JobDocumentService {
                     saved.getId(), saved.getJobNo(), saved.getDocumentType(),
                     saved.getClassifiedDocumentType() != null ? saved.getClassifiedDocumentType() : "null");
 
-            // Add a small delay to ensure the save is fully committed
-            try {
-                log.debug("Adding a small delay to ensure document save is fully committed");
-                Thread.sleep(200); // 200ms delay
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                log.warn("Sleep interrupted while waiting for document save to commit", ie);
-            }
+            // No need for delay with proper transaction management
+            log.debug("Document save committed with proper transaction management");
 
             return saved;
         } catch (Exception e) {
@@ -154,6 +148,7 @@ public class JobDocumentService {
 
     /**
      * Get a document by job number and document type.
+     * This method first searches by document type, and if not found, by classified document type.
      *
      * @param jobNo The job number
      * @param documentType The document type
@@ -180,17 +175,36 @@ public class JobDocumentService {
             log.debug("Could not log transaction details: {}", e.getMessage());
         }
 
-        // Always get the most recent document by using the OrderByIdDesc method
+        // First try to find by document type
         Optional<JobDocument> result = jobDocumentRepository.findTopByJobNoAndDocumentTypeOrderByIdDesc(normalizedJobNo, normalizedDocumentType);
-        if (result.isPresent()) {
+
+        // If not found by document type, try by classified document type
+        if (result.isEmpty()) {
+            log.info("Document not found by document type, trying classified document type for Job No: '{}', Document Type: '{}'",
+                    normalizedJobNo, normalizedDocumentType);
+
+            result = jobDocumentRepository.findTopByJobNoAndClassifiedDocumentTypeOrderByIdDesc(normalizedJobNo, normalizedDocumentType);
+
+            if (result.isPresent()) {
+                JobDocument document = result.get();
+                log.info("Found document by classified type with ID: {} for Job No: '{}', Classified Type: '{}'",
+                        document.getId(), document.getJobNo(), document.getClassifiedDocumentType());
+                log.debug("Document details - File Name: '{}', Content Type: '{}', Data Size: {} bytes",
+                        document.getFileName(), document.getContentType(),
+                        document.getDocumentData() != null ? document.getDocumentData().length : 0);
+            }
+        } else {
             JobDocument document = result.get();
-            log.info("Found document with ID: {} for Job No: '{}', Document Type: '{}'",
+            log.info("Found document by document type with ID: {} for Job No: '{}', Document Type: '{}'",
                     document.getId(), document.getJobNo(), document.getDocumentType());
             log.debug("Document details - File Name: '{}', Content Type: '{}', Data Size: {} bytes",
                     document.getFileName(), document.getContentType(),
                     document.getDocumentData() != null ? document.getDocumentData().length : 0);
-        } else {
-            log.warn("Document not found for Job No: '{}', Document Type: '{}'", normalizedJobNo, normalizedDocumentType);
+        }
+
+        if (result.isEmpty()) {
+            log.warn("Document not found by either document type or classified type for Job No: '{}', Document Type: '{}'",
+                    normalizedJobNo, normalizedDocumentType);
         }
 
         return result;
@@ -198,46 +212,20 @@ public class JobDocumentService {
 
     /**
      * Get a document by job number and classified document type.
+     * This method is kept for backward compatibility but now simply calls getJobDocument.
      *
      * @param jobNo The job number
      * @param classifiedDocumentType The classified document type
      * @return Optional containing the document if found
+     * @deprecated Use getJobDocument instead, which now searches by both document type and classified type
      */
+    @Deprecated
     public Optional<JobDocument> getJobDocumentByClassifiedType(String jobNo, String classifiedDocumentType) {
-        log.info("Getting document for Job No: '{}', Classified Document Type: '{}'", jobNo, classifiedDocumentType);
+        log.info("Getting document by classified type for Job No: '{}', Classified Document Type: '{}' (using unified search)",
+                jobNo, classifiedDocumentType);
 
-        // Normalize parameters if needed
-        String normalizedJobNo = jobNo.trim();
-        String normalizedClassifiedDocumentType = classifiedDocumentType.trim();
-
-        if (!normalizedJobNo.equals(jobNo) || !normalizedClassifiedDocumentType.equals(classifiedDocumentType)) {
-            log.debug("Normalized parameters - Original Job No: '{}', Normalized: '{}', Original Classified Document Type: '{}', Normalized: '{}'",
-                    jobNo, normalizedJobNo, classifiedDocumentType, normalizedClassifiedDocumentType);
-        }
-
-        // Log transaction information if possible
-        try {
-            log.debug("Transaction active: {}, Transaction name: {}",
-                    TransactionSynchronizationManager.isActualTransactionActive(),
-                    TransactionSynchronizationManager.getCurrentTransactionName());
-        } catch (Exception e) {
-            log.debug("Could not log transaction details: {}", e.getMessage());
-        }
-
-        // Always get the most recent document by using the OrderByIdDesc method
-        Optional<JobDocument> result = jobDocumentRepository.findTopByJobNoAndClassifiedDocumentTypeOrderByIdDesc(normalizedJobNo, normalizedClassifiedDocumentType);
-        if (result.isPresent()) {
-            JobDocument document = result.get();
-            log.info("Found document with ID: {} for Job No: '{}', Classified Document Type: '{}'",
-                    document.getId(), document.getJobNo(), document.getClassifiedDocumentType());
-            log.debug("Document details - File Name: '{}', Content Type: '{}', Data Size: {} bytes",
-                    document.getFileName(), document.getContentType(),
-                    document.getDocumentData() != null ? document.getDocumentData().length : 0);
-        } else {
-            log.warn("Document not found for Job No: '{}', Classified Document Type: '{}'", normalizedJobNo, normalizedClassifiedDocumentType);
-        }
-
-        return result;
+        // Simply delegate to getJobDocument which now searches by both fields
+        return getJobDocument(jobNo, classifiedDocumentType);
     }
 
     /**

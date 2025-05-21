@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono; // Added
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects; // Import Objects for null check helper
 
@@ -128,18 +129,26 @@ public class VerificationController {
         log.info("Request received to check eligibility for Job No: {}", jobNo);
         return businessCentralService.fetchJobListEntry(jobNo) // Use injected service
             .map(jobListEntry -> {
-                // Reverted Eligibility Logic: Check if first check is done and second check is pending
+                // Updated Eligibility Logic: Check if first check is done and second check person is empty
                 boolean isFirstCheckDone = jobListEntry.getFirstCheckDate() != null && !jobListEntry.getFirstCheckDate().isBlank();
-                boolean isSecondCheckPending = jobListEntry.getSecondCheckDate() == null || jobListEntry.getSecondCheckDate().isBlank();
-                boolean isEligible = isFirstCheckDone && isSecondCheckPending;
+                boolean isSecondCheckPersonEmpty = jobListEntry.getSecondCheckBy() == null || jobListEntry.getSecondCheckBy().isBlank();
+                boolean isEligible = isFirstCheckDone && isSecondCheckPersonEmpty;
+
+                // Log detailed eligibility check information
+                log.info("Eligibility check details for Job No: {}", jobNo);
+                log.info("First Check Date: '{}', Second Check By: '{}'",
+                         jobListEntry.getFirstCheckDate(), jobListEntry.getSecondCheckBy());
+                log.info("isFirstCheckDone: {}, isSecondCheckPersonEmpty: {}, isEligible: {}",
+                         isFirstCheckDone, isSecondCheckPersonEmpty, isEligible);
+
                 String message;
 
                 if (isEligible) {
                     message = "Eligible for second check.";
                 } else if (!isFirstCheckDone) {
                     message = "First check has not been completed.";
-                } else { // Implies second check is already done
-                    message = "Second check has already been completed.";
+                } else { // Implies second check person is already assigned
+                    message = "Second check has already been assigned to: " + jobListEntry.getSecondCheckBy();
                 }
 
                 EligibilityCheckResponseDTO response = EligibilityCheckResponseDTO.builder()
@@ -208,6 +217,30 @@ public class VerificationController {
                 .orElseGet(() -> {
                     log.warn("No verification request found for Job No: {}", jobNo);
                     return ResponseEntity.notFound().build();
+                });
+    }
+
+    /**
+     * Gets a list of jobs pending second check from Business Central.
+     * @return List of JobListDTO objects representing jobs pending second check
+     */
+    @GetMapping("/jobs-pending-second-check")
+    public Mono<ResponseEntity<List<JobListDTO>>> getJobsPendingSecondCheck() {
+        log.info("Request received for jobs pending second check");
+        return businessCentralService.fetchJobsPendingSecondCheck()
+                .collectList()
+                .map(jobs -> {
+                    log.info("Found {} jobs pending second check", jobs.size());
+                    // Log each job for debugging
+                    jobs.forEach(job -> {
+                        log.info("Returning job to frontend: No={}, FirstCheckDate={}, SecondCheckBy={}, Description={}",
+                                job.getNo(), job.getFirstCheckDate(), job.getSecondCheckBy(), job.getDescription());
+                    });
+                    return ResponseEntity.ok(jobs);
+                })
+                .onErrorResume(e -> {
+                    log.error("Error fetching jobs pending second check", e);
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
                 });
     }
 }

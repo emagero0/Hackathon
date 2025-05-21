@@ -59,6 +59,23 @@ public class JobAttachmentService {
     public Flux<String> fetchAndStoreJobAttachments(String jobNo) {
         log.info("Fetching and storing job attachments for Job No: '{}'", jobNo);
 
+        // Special handling for job J069026 to diagnose issues
+        if ("J069026".equals(jobNo)) {
+            log.error("SPECIAL DIAGNOSTIC: Detected problematic job J069026");
+
+            // First check if the job exists in Business Central
+            try {
+                var jobListEntry = businessCentralService.fetchJobListEntry(jobNo).block();
+                if (jobListEntry == null) {
+                    log.error("SPECIAL DIAGNOSTIC: Job J069026 does not exist in Business Central");
+                } else {
+                    log.error("SPECIAL DIAGNOSTIC: Job J069026 exists in Business Central: {}", jobListEntry);
+                }
+            } catch (Exception e) {
+                log.error("SPECIAL DIAGNOSTIC: Error checking if Job J069026 exists: {}", e.getMessage(), e);
+            }
+        }
+
         // Log transaction information if possible
         try {
             log.debug("Transaction active: {}, Transaction name: {}",
@@ -68,14 +85,8 @@ public class JobAttachmentService {
             log.debug("Could not log transaction details: {}", e.getMessage());
         }
 
-        // Add a small delay to ensure any previous transactions are fully committed
-        try {
-            log.debug("Adding a small delay before fetching attachments to ensure previous transactions are committed");
-            Thread.sleep(1000); // 1 second delay
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            log.warn("Sleep interrupted before fetching attachments", ie);
-        }
+        // No need for delay with proper transaction management
+        log.debug("Fetching attachments with proper transaction management");
 
         // Check which documents already exist in the database
         boolean salesQuoteExists = jobDocumentService.documentExists(jobNo, SALES_QUOTE_TYPE);
@@ -90,22 +101,69 @@ public class JobAttachmentService {
 
         log.info("Fetching attachment links from Business Central for Job No: {}", jobNo);
         return businessCentralService.fetchJobAttachmentLinks(jobNo)
+                .doOnSuccess(links -> {
+                    if (links == null) {
+                        log.error("Business Central returned null for JobAttachmentLinks for Job No: {}", jobNo);
+
+                        // Special handling for job J069026
+                        if ("J069026".equals(jobNo)) {
+                            log.error("SPECIAL DIAGNOSTIC: Business Central returned null for JobAttachmentLinks for problematic job J069026");
+                        }
+                    } else {
+                        log.info("Business Central returned JobAttachmentLinks for Job No: {}, File_Links: '{}'",
+                                jobNo, links.getFileLinks());
+
+                        // Special handling for job J069026
+                        if ("J069026".equals(jobNo)) {
+                            log.error("SPECIAL DIAGNOSTIC: Business Central returned JobAttachmentLinks for problematic job J069026: {}", links);
+                        }
+                    }
+                })
+                .doOnError(e -> {
+                    log.error("Error fetching JobAttachmentLinks from Business Central for Job No: {}: {}",
+                            jobNo, e.getMessage(), e);
+
+                    // Special handling for job J069026
+                    if ("J069026".equals(jobNo)) {
+                        log.error("SPECIAL DIAGNOSTIC: Error fetching JobAttachmentLinks for problematic job J069026: {}", e.getMessage(), e);
+                    }
+                })
                 .flatMapMany(attachmentLinks -> {
                     if (attachmentLinks == null) {
-                        log.warn("No attachment links found for Job No: {}", jobNo);
+                        log.error("No attachment links found for Job No: {}. Business Central returned null.", jobNo);
+
+                        // Special handling for job J069026
+                        if ("J069026".equals(jobNo)) {
+                            log.error("SPECIAL DIAGNOSTIC: No attachment links found for problematic job J069026");
+                        }
+
                         return Flux.empty();
                     }
 
                     String[] sharePointUrls = attachmentLinks.getSharePointUrls();
                     if (sharePointUrls.length == 0) {
-                        log.warn("No SharePoint URLs found in attachment links for Job No: {}", jobNo);
+                        log.error("No SharePoint URLs found in attachment links for Job No: {}. Raw File_Links: '{}'",
+                                jobNo, attachmentLinks.getFileLinks());
+
+                        // Special handling for job J069026
+                        if ("J069026".equals(jobNo)) {
+                            log.error("SPECIAL DIAGNOSTIC: No SharePoint URLs found for problematic job J069026. Raw File_Links: '{}'",
+                                    attachmentLinks.getFileLinks());
+                        }
+
                         return Flux.empty();
                     }
 
                     log.info("Found {} SharePoint URLs for Job No: {}: {}", sharePointUrls.length, jobNo, String.join(", ", sharePointUrls));
 
                     // Log the raw File_Links field for debugging
-                    log.debug("Raw File_Links field for Job No: {}: {}", jobNo, attachmentLinks.getFileLinks());
+                    log.info("Raw File_Links field for Job No: {}: {}", jobNo, attachmentLinks.getFileLinks());
+
+                    // Special handling for job J069026
+                    if ("J069026".equals(jobNo)) {
+                        log.error("SPECIAL DIAGNOSTIC: Found {} SharePoint URLs for problematic job J069026: {}",
+                                sharePointUrls.length, String.join(", ", sharePointUrls));
+                    }
 
                     // Clean up the URLs - remove any that are obviously invalid
                     List<String> validUrls = new ArrayList<>();
@@ -174,6 +232,11 @@ public class JobAttachmentService {
             log.info("Special handling for job J069023 and file jOB%20SHIPMENT_124.pdf");
         }
 
+        // Special handling for job J069026
+        if ("J069026".equals(jobNo)) {
+            log.error("SPECIAL DIAGNOSTIC: Attempting to download document for problematic job J069026 from URL: {}", sharePointUrl);
+        }
+
         final String fileName = extractFileName(sharePointUrl);
         log.debug("Extracted file name: {} for Job No: {}", fileName, jobNo);
 
@@ -236,34 +299,26 @@ public class JobAttachmentService {
                         log.debug("JobDocument saved successfully with ID: {} for Job No: '{}', Document Type: '{}'",
                                 saved.getId(), jobNo, documentType);
 
-                        // Add a small delay to ensure the document is fully saved
-                        try {
-                            log.debug("Adding a small delay to ensure document is fully saved");
-                            Thread.sleep(500); // 500ms delay
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            log.warn("Sleep interrupted while waiting for document save", ie);
-                        }
+                        // No need for delay with proper transaction management
+                        log.debug("Document saved with proper transaction management");
 
                         return saved;
                     })
                     .thenReturn(documentType);
                 })
                 .onErrorResume(e -> {
-                    // Special handling for job J069023 and the problematic file
-                    if (jobNo.equals("J069023") && sharePointUrl.contains("jOB%20SHIPMENT_124.pdf")) {
-                        log.error("Error downloading problematic file jOB%20SHIPMENT_124.pdf for Job No: J069023", e);
-                        log.info("Detailed error information: Type={}, Message={}", e.getClass().getName(), e.getMessage());
+                    // Log detailed error information for all download failures
+                    log.error("Error downloading document from SharePoint URL: {} for Job No: {}", sharePointUrl, jobNo, e);
+                    log.error("Detailed error information: Type={}, Message={}", e.getClass().getName(), e.getMessage());
 
-                        // Log the stack trace for detailed debugging
-                        StringBuilder stackTrace = new StringBuilder();
-                        for (StackTraceElement element : e.getStackTrace()) {
-                            stackTrace.append("\n    at ").append(element.toString());
-                        }
-                        log.debug("Stack trace for problematic file: {}", stackTrace.toString());
-                    } else {
-                        log.error("Error downloading document from SharePoint URL: {} for Job No: {}", sharePointUrl, jobNo, e);
+                    // Log the stack trace for detailed debugging
+                    StringBuilder stackTrace = new StringBuilder();
+                    for (StackTraceElement element : e.getStackTrace()) {
+                        stackTrace.append("\n    at ").append(element.toString());
                     }
+                    log.error("Stack trace for failed download: {}", stackTrace.toString());
+
+                    // Return empty to continue with other URLs
                     return Mono.empty();
                 });
     }

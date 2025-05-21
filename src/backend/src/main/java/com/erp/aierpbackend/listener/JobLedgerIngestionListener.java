@@ -184,18 +184,18 @@ public class JobLedgerIngestionListener {
         // 4. Qualification Check using Job_List
         businessCentralService.fetchJobListEntry(jobNo)
             .flatMap(jobListEntry -> { // jobListEntry is available here
-                // Check qualification criteria
+                // Check qualification criteria - updated to check for empty second check person
                 boolean isFirstCheckDone = jobListEntry.getFirstCheckDate() != null && !jobListEntry.getFirstCheckDate().isBlank();
-                boolean isSecondCheckPending = jobListEntry.getSecondCheckDate() == null || jobListEntry.getSecondCheckDate().isBlank();
+                boolean isSecondCheckPersonEmpty = jobListEntry.getSecondCheckBy() == null || jobListEntry.getSecondCheckBy().isBlank();
 
-                if (isFirstCheckDone && isSecondCheckPending) {
-                    log.info("Job No: {} qualifies for second check (1st check date: {}, 2nd check date: {}). Proceeding.",
-                             jobNo, jobListEntry.getFirstCheckDate(), jobListEntry.getSecondCheckDate());
+                if (isFirstCheckDone && isSecondCheckPersonEmpty) {
+                    log.info("Job No: {} qualifies for second check (1st check date: {}, 2nd check by: {}). Proceeding.",
+                             jobNo, jobListEntry.getFirstCheckDate(), jobListEntry.getSecondCheckBy());
                     // 5. Fetch Ledger Entry (only if qualified)
                     return businessCentralService.fetchJobLedgerEntries(jobNo).next(); // Fetch the first ledger entry
                 } else {
-                    log.warn("Job No: {} does not qualify for second check. Skipping verification. (1st check date: {}, 2nd check date: {})",
-                             jobNo, jobListEntry.getFirstCheckDate(), jobListEntry.getSecondCheckDate());
+                    log.warn("Job No: {} does not qualify for second check. Skipping verification. (1st check date: {}, 2nd check by: {})",
+                             jobNo, jobListEntry.getFirstCheckDate(), jobListEntry.getSecondCheckBy());
                     // Update status to SKIPPED/NOT_QUALIFIED
                     currentRequest.setStatus(VerificationRequest.VerificationStatus.SKIPPED); // Assuming SKIPPED status exists
                     currentRequest.setResultTimestamp(LocalDateTime.now());

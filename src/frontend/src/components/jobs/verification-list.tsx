@@ -77,13 +77,16 @@ export function VerificationList({ jobs, onJobsUpdate }: VerificationListProps) 
     }).format(date);
   };
 
+  // Log jobs for debugging
+  console.log('Current jobs in verification list:', jobs);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Jobs for Verification</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="mb-4">
+        <div className="mb-4 flex gap-2">
           <Button
             onClick={handleVerifySelected}
             disabled={verifying || selectedJobs.length === 0}
@@ -97,6 +100,18 @@ export function VerificationList({ jobs, onJobsUpdate }: VerificationListProps) 
               `Verify Selected (${selectedJobs.length})`
             )}
           </Button>
+
+          {jobs.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                console.log('Clearing verification list');
+                onJobsUpdate([]);
+              }}
+            >
+              Clear List
+            </Button>
+          )}
         </div>
 
         <div className="border rounded-md">
@@ -122,19 +137,24 @@ export function VerificationList({ jobs, onJobsUpdate }: VerificationListProps) 
                   </TableCell>
                 </TableRow>
               ) : (
-                jobs.map((job) => (
-                  <TableRow key={job.jobNo}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedJobs.includes(job.jobNo)}
-                        onCheckedChange={() => toggleSelectJob(job.jobNo)}
-                      />
-                    </TableCell>
-                    <TableCell>{job.jobNo}</TableCell>
-                    <TableCell>{formatDate(job.addedDate)}</TableCell>
-                    <TableCell><StatusBadge status={job.status} /></TableCell>
-                  </TableRow>
-                ))
+                jobs.map((job) => {
+                  console.log('Rendering job in verification list:', job);
+                  return (
+                    <TableRow key={job.jobNo}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedJobs.includes(job.jobNo)}
+                          onCheckedChange={() => toggleSelectJob(job.jobNo)}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {job.jobNo || 'No Job Number'}
+                      </TableCell>
+                      <TableCell>{formatDate(job.addedDate)}</TableCell>
+                      <TableCell><StatusBadge status={job.status} /></TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>

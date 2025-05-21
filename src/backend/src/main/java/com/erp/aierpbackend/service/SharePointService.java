@@ -100,9 +100,28 @@ public class SharePointService {
 
     public Mono<byte[]> downloadFile(String sharepointUrlString) {
         log.info("Attempting to download from SharePoint URL (using robust multi-step): {}", sharepointUrlString);
+
+        // Special handling for job J069026
+        if (sharepointUrlString != null && sharepointUrlString.contains("J069026")) {
+            log.error("SPECIAL DIAGNOSTIC: Attempting to download file for problematic job J069026 from URL: {}", sharepointUrlString);
+        }
+
         return downloadFileFromSharePointUrl(sharepointUrlString)
+            .doOnSuccess(data -> {
+                // Special handling for job J069026
+                if (sharepointUrlString != null && sharepointUrlString.contains("J069026")) {
+                    log.error("SPECIAL DIAGNOSTIC: Successfully downloaded file for problematic job J069026, size: {} bytes",
+                            data != null ? data.length : 0);
+                }
+            })
             .onErrorResume(e -> {
                 log.warn("Robust download approach (downloadFileFromSharePointUrl) failed for URL {}: {}. No further fallbacks implemented in this path.", sharepointUrlString, e.getMessage(), e);
+
+                // Special handling for job J069026
+                if (sharepointUrlString != null && sharepointUrlString.contains("J069026")) {
+                    log.error("SPECIAL DIAGNOSTIC: Failed to download file for problematic job J069026: {}", e.getMessage(), e);
+                }
+
                 return Mono.error(new IOException("All download attempts failed for " + sharepointUrlString, e));
             });
     }

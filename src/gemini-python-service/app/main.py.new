@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from contextlib import asynccontextmanager
 import logging
 
@@ -116,40 +116,25 @@ def health_check():
     credentials_message = "No service account credentials configured."
     credentials_type = "none"
 
-    # Check if service account credentials are provided via environment variables
-    if config.settings.has_service_account_env_vars():
-        credentials_status = "available"
-        credentials_message = f"Service account credentials found in environment variables for: {config.settings.google_service_account_client_email}"
-        credentials_type = "service_account_env"
-    # Check if service account credentials file exists (legacy method)
-    elif config.settings.google_application_credentials:
-        import os
-        if os.path.exists(config.settings.google_application_credentials):
-            credentials_status = "available"
-            credentials_message = f"Service account credentials found at: {config.settings.google_application_credentials}"
-            credentials_type = "service_account_file"
-        else:
-            credentials_status = "missing"
-            credentials_message = f"Service account credentials file not found at: {config.settings.google_application_credentials}"
-            credentials_type = "service_account_file_missing"
-    else:
-        # Assuming Application Default Credentials
-        credentials_type = "adc"
-        credentials_message = "Using Application Default Credentials (ADC)"
+    if config.settings.google_application_credentials:
+        credentials_status = "file"
+        credentials_message = f"Using service account key file: {config.settings.google_application_credentials}"
+        credentials_type = "file"
+    elif config.settings.has_service_account_env_vars():
+        credentials_status = "env"
+        credentials_message = "Using service account credentials from environment variables."
+        credentials_type = "env"
 
     return {
         "status": status,
         "message": message,
-        "gcp_project": config.settings.gcp_project_id,
-        "gcp_location": config.settings.gcp_location,
-        "gemini_model": config.settings.gemini_model_name,
         "vertex_ai_initialized": services._vertex_ai_initialized,
+        "project_id": config.settings.gcp_project_id,
+        "location": config.settings.gcp_location,
+        "model": config.settings.gemini_model_name,
         "credentials": {
             "status": credentials_status,
             "message": credentials_message,
             "type": credentials_type
         }
     }
-
-# To run this app (from the root of gemini-python-service directory):
-# uvicorn app.main:app --reload --port 8000

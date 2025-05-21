@@ -20,16 +20,15 @@ class ClassificationRequest(BaseModel):
     job_no: str
     document_images: List[DocumentImage]
 
+# New combined request schema
 class ClassifyAndVerifyRequest(BaseModel):
     job_no: str
     document_images: List[DocumentImage]
     erp_data: Dict[str, Any] # Represents the structured BC data for all document types
 
-# --- Response Schemas ---
-
 class IdentifierExtractionResponse(BaseModel):
-    extracted_identifiers: Dict[str, str]
-    error_message: Optional[str] = None # Optional field for errors
+    extracted_identifiers: Dict[str, str] = Field(default_factory=dict)
+    error_message: Optional[str] = None
 
 class Discrepancy(BaseModel):
     field_name: str
@@ -44,18 +43,12 @@ class FieldConfidence(BaseModel):
     extracted_value: Optional[str] = None
     verified: bool = False
 
-class ExtractedValues(BaseModel): # Placeholder if you want to return all extracted values
-    header: Dict[str, Any] = {}
-    lines: List[Dict[str, Any]] = []
-
 class VerificationResponse(BaseModel):
-    # Based on GeminiVerificationResult.java structure, adapted for Pydantic
     discrepancies: List[Discrepancy] = Field(default_factory=list)
     field_confidences: List[FieldConfidence] = Field(default_factory=list)
-    # extracted_values: Optional[ExtractedValues] = None # If you decide to include this
     overall_verification_confidence: float = 0.0
-    raw_llm_response: Optional[str] = None # For debugging
-    error_message: Optional[str] = None # Optional field for errors
+    raw_llm_response: Optional[str] = None
+    error_message: Optional[str] = None
 
 class ClassificationResponse(BaseModel):
     document_type: str = Field(description="The classified document type (SalesQuote, ProformaInvoice, JobConsumption, or UNKNOWN)")
@@ -63,6 +56,7 @@ class ClassificationResponse(BaseModel):
     reasoning: Optional[str] = Field(default=None, description="Brief explanation of why this classification was chosen")
     error_message: Optional[str] = None # Optional field for errors
 
+# New combined response schema
 class ClassifyAndVerifyResponse(BaseModel):
     document_type: str = Field(description="The classified document type (SalesQuote, ProformaInvoice, JobConsumption, or UNKNOWN)")
     classification_confidence: float = Field(default=0.0, description="A confidence score between 0.0 and 1.0 for classification")
