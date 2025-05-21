@@ -23,7 +23,7 @@ export function JobVerificationManager() {
   const [autoFetch, setAutoFetch] = useState<boolean>(false);
   const [fetchInterval, setFetchInterval] = useState<number>(5);
   const [isFetching, setIsFetching] = useState<boolean>(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleAddToVerification = (jobNo: string) => {
     console.log('handleAddToVerification called with jobNo:', jobNo);
@@ -82,7 +82,6 @@ export function JobVerificationManager() {
 
       // Add new jobs to the list if they're not already there
       let newJobsAdded = 0;
-      const newJobs: Job[] = [];
 
       // Debug current jobs
       console.log('Current jobs before adding new ones:', jobs);
