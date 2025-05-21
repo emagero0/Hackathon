@@ -31,6 +31,20 @@ buildNumber.properties
 .idea/
 *.swp
 *.swo
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.factorypath
+.metadata/
+.recommenders/
+nbproject/
+nbactions.xml
+nb-configuration.xml
+.nb-gradle/
+.eclipse/
 
 # Operating System Files
 .DS_Store
@@ -46,6 +60,13 @@ hs_err_pid*
 # Testing
 coverage/
 .pytest_cache/
+**/test/
+**/tests/
+**/*.test.*
+**/*.spec.*
+**/junit-*.xml
+**/test-results/
+**/surefire-reports/
 
 # Database
 *.sqlite3
@@ -54,6 +75,14 @@ mysql-data/
 # Temporary files
 *.tmp
 *.temp
+*.bak
+*.swp
+*.cache
+.eslintcache
+.stylelintcache
+.sass-cache/
+.cache/
+.parcel-cache/
 
 # Docker
 .dockerignore
