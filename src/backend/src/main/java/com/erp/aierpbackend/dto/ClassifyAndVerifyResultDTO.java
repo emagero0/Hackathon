@@ -65,6 +65,9 @@ public class ClassifyAndVerifyResultDTO {
         
         @JsonProperty("description")
         private String description;
+
+        @JsonProperty("discrepancy_type")
+        private String discrepancyType;
     }
     
     /**
@@ -79,13 +82,16 @@ public class ClassifyAndVerifyResultDTO {
         @JsonProperty("field_name")
         private String fieldName;
         
-        @JsonProperty("confidence")
-        private Double confidence;
+        @JsonProperty("extraction_confidence") // Renamed from confidence
+        private Double extractionConfidence;
         
         @JsonProperty("extracted_value")
         private String extractedValue;
         
         @JsonProperty("verified")
         private Boolean verified;
+
+        @JsonProperty("match_assessment_confidence")
+        private Double matchAssessmentConfidence;
     }
 }

@@ -58,9 +58,16 @@ public class JobDocumentVerificationService {
     private static final String[] SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"};
 
     // Keys for document identifiers from LLM service
-    private static final String SALES_QUOTE_NUMBER_KEY = "salesQuoteNo";
-    private static final String PROFORMA_INVOICE_NUMBER_KEY = "proformaInvoiceNo";
-    private static final String JOB_CONSUMPTION_NUMBER_KEY = "jobConsumptionNo";
+    private static final String SALES_QUOTE_NUMBER_KEY = "salesQuoteNo"; // Internal key for map
+    private static final String PROFORMA_INVOICE_NUMBER_KEY = "proformaInvoiceNo"; // Internal key for map
+    private static final String JOB_CONSUMPTION_NUMBER_KEY = "jobConsumptionNo"; // Internal key for map
+
+    // Expected fieldName values (identifier_label) from LLM's FieldConfidenceDTO
+    public static final String LLM_LABEL_SALES_QUOTE_NUMBER = "Sales Quote Number";
+    public static final String LLM_LABEL_TAX_INVOICE_NUMBER = "Tax Invoice Number";
+    public static final String LLM_LABEL_JOB_SHIPMENT_NUMBER = "Job Shipment Number";
+    public static final String LLM_LABEL_UNKNOWN_IDENTIFIER = "Unknown Identifier";
+
 
     // Thread-safe cache for extracted document identifiers
     private final Map<String, Map<String, String>> extractedIdentifiersCache = new ConcurrentHashMap<>();
@@ -199,34 +206,65 @@ public class JobDocumentVerificationService {
             // Extract document numbers from field confidences
             String extractedSalesQuoteNo = null;
             String extractedProformaInvoiceNo = null;
+            // String extractedJobShipmentNo = null; // Not strictly needed by this method's downstream logic but good to extract if available
 
-            if (classificationResult.getFieldConfidences() != null) {
+            if (classificationResult != null && classificationResult.getFieldConfidences() != null) {
                 for (ClassifyAndVerifyResultDTO.FieldConfidenceDTO field : classificationResult.getFieldConfidences()) {
-                    if (field.getFieldName().contains("Quote No") || field.getFieldName().contains("Quote Number")) {
-                        extractedSalesQuoteNo = field.getExtractedValue();
-                        log.info("Extracted Sales Quote No: {} from document for Job No: {}", extractedSalesQuoteNo, jobNo);
-                    } else if (field.getFieldName().contains("Invoice No") || field.getFieldName().contains("Invoice Number")) {
-                        extractedProformaInvoiceNo = field.getExtractedValue();
-                        log.info("Extracted Proforma Invoice No: {} from document for Job No: {}", extractedProformaInvoiceNo, jobNo);
+                    String fieldName = field.getFieldName(); // This is the identifier_label from LLM
+                    String extractedValue = field.getExtractedValue();
+                    float confidence = field.getConfidence(); // LLM's extraction_confidence
+
+                    if (LLM_LABEL_SALES_QUOTE_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
+                        extractedSalesQuoteNo = extractedValue;
+                        log.info("Extracted Sales Quote No: {} with confidence: {} for Job No: {}", extractedSalesQuoteNo, confidence, jobNo);
+                    } else if (LLM_LABEL_TAX_INVOICE_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
+                        extractedProformaInvoiceNo = extractedValue;
+                        log.info("Extracted Proforma Invoice No: {} with confidence: {} for Job No: {}", extractedProformaInvoiceNo, confidence, jobNo);
+                    } else if (LLM_LABEL_JOB_SHIPMENT_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
+                        // extractedJobShipmentNo = extractedValue; // Store if needed later
+                        log.info("Extracted Job Shipment No: {} with confidence: {} for Job No: {}", extractedValue, confidence, jobNo);
                     }
                 }
             }
 
             // Check for missing identifiers and provide specific error messages
+            // Use the error messages from the DTO if available, otherwise fallback to generic messages
+            boolean criticalIdentifierMissing = false;
+            if (classificationResult != null && classificationResult.getErrorMessage() != null && !classificationResult.getErrorMessage().isEmpty()) {
+                log.warn("LLM reported an issue during classification/extraction for Job No: {}: {}", jobNo, classificationResult.getErrorMessage());
+                // Example: "Validation Error (SalesQuote): Cannot find Sales Quote Number from Sales Quote document"
+                if (classificationResult.getErrorMessage().contains("Sales Quote Number")) {
+                    finalDiscrepancies.add(classificationResult.getErrorMessage()); // Add specific error from LLM
+                    if (isNotFound(extractedSalesQuoteNo)) criticalIdentifierMissing = true;
+                }
+                if (classificationResult.getErrorMessage().contains("Tax Invoice Number")) {
+                     finalDiscrepancies.add(classificationResult.getErrorMessage()); // Add specific error from LLM
+                    if (isNotFound(extractedProformaInvoiceNo)) criticalIdentifierMissing = true;
+                }
+            }
+
+            // Fallback messages if not covered by DTO's error message
             if (isNotFound(extractedSalesQuoteNo)) {
-                finalDiscrepancies.add("Cannot find Sales Quote Number from Sales Quote document");
-                log.warn("Cannot find Sales Quote Number from Sales Quote document for Job No: {}", jobNo);
+                String msg = "Cannot find Sales Quote Number from Sales Quote document";
+                if (!finalDiscrepancies.stream().anyMatch(d -> d.contains("Sales Quote Number"))) { // Avoid duplicate generic messages
+                    finalDiscrepancies.add(msg);
+                }
+                log.warn("{} for Job No: {}", msg, jobNo);
+                criticalIdentifierMissing = true;
             }
 
             if (isNotFound(extractedProformaInvoiceNo)) {
-                finalDiscrepancies.add("Cannot find Tax Invoice Number from Proforma Invoice document - please check Proforma Invoice");
-                log.warn("Cannot find Tax Invoice Number from Proforma Invoice document for Job No: {}", jobNo);
+                String msg = "Cannot find Tax Invoice Number from Proforma Invoice document - please check Proforma Invoice";
+                 if (!finalDiscrepancies.stream().anyMatch(d -> d.contains("Tax Invoice Number"))) { // Avoid duplicate generic messages
+                    finalDiscrepancies.add(msg);
+                }
+                log.warn("{} for Job No: {}", msg, jobNo);
+                criticalIdentifierMissing = true;
             }
 
-            // If we have missing identifiers, return early
-            if (!finalDiscrepancies.isEmpty()) {
-                log.warn("Missing required document identifiers for Job No: {}. Cannot proceed with verification.", jobNo);
-                return finalDiscrepancies;
+            if (criticalIdentifierMissing) {
+                log.warn("Missing critical document identifiers for Job No: {}. Cannot proceed with full verification.", jobNo);
+                return finalDiscrepancies; // Return early if critical identifiers are missing
             }
 
             // Now fetch Business Central data using the extracted document numbers
@@ -1084,171 +1122,51 @@ public class JobDocumentVerificationService {
                 return extractedIdentifiers; // Return empty map
             }
 
-            // Extract document numbers from field confidences
+            // Extract document numbers from field confidences based on Python service's structured output
             if (result.getFieldConfidences() != null) {
                 for (ClassifyAndVerifyResultDTO.FieldConfidenceDTO field : result.getFieldConfidences()) {
-                    if (field.getFieldName().contains("Quote No") || field.getFieldName().contains("Quote Number") ||
-                            field.getFieldName().contains("Sales Quote Number")) {
-                        String salesQuoteNo = field.getExtractedValue();
-                        if (!isNotFound(salesQuoteNo)) {
-                            extractedIdentifiers.put(SALES_QUOTE_NUMBER_KEY, salesQuoteNo);
-                            log.info("Extracted Sales Quote No: {} from document for Job No: {}", salesQuoteNo, jobNo);
-                        }
-                    } else if (field.getFieldName().contains("Invoice No") || field.getFieldName().contains("Invoice Number") ||
-                            field.getFieldName().contains("Tax Invoice Number")) {
-                        String proformaInvoiceNo = field.getExtractedValue();
-                        if (!isNotFound(proformaInvoiceNo)) {
-                            extractedIdentifiers.put(PROFORMA_INVOICE_NUMBER_KEY, proformaInvoiceNo);
-                            log.info("Extracted Proforma Invoice No: {} from document for Job No: {}", proformaInvoiceNo, jobNo);
-                        }
-                    } else if (field.getFieldName().contains("Job Consumption No") || field.getFieldName().contains("Job Shipment No")) {
-                        String jobConsumptionNo = field.getExtractedValue();
-                        if (!isNotFound(jobConsumptionNo)) {
-                            extractedIdentifiers.put(JOB_CONSUMPTION_NUMBER_KEY, jobConsumptionNo);
-                            log.info("Extracted Job Consumption No: {} from document for Job No: {}", jobConsumptionNo, jobNo);
-                        }
+                    String fieldName = field.getFieldName(); // This is the identifier_label from LLM
+                    String extractedValue = field.getExtractedValue();
+                    float confidence = field.getConfidence(); // LLM's extraction_confidence
+
+                    if (LLM_LABEL_SALES_QUOTE_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
+                        extractedIdentifiers.put(SALES_QUOTE_NUMBER_KEY, extractedValue);
+                        log.info("Extracted Sales Quote No: {} with confidence: {} for Job No: {}", extractedValue, confidence, jobNo);
+                    } else if (LLM_LABEL_TAX_INVOICE_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
+                        extractedIdentifiers.put(PROFORMA_INVOICE_NUMBER_KEY, extractedValue);
+                        log.info("Extracted Proforma Invoice No: {} with confidence: {} for Job No: {}", extractedValue, confidence, jobNo);
+                    } else if (LLM_LABEL_JOB_SHIPMENT_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
+                        extractedIdentifiers.put(JOB_CONSUMPTION_NUMBER_KEY, extractedValue);
+                        log.info("Extracted Job Shipment No: {} with confidence: {} for Job No: {}", extractedValue, confidence, jobNo);
+                    } else if (LLM_LABEL_UNKNOWN_IDENTIFIER.equalsIgnoreCase(fieldName)) {
+                        log.warn("LLM returned an Unknown Identifier for Job No: {} with value: {} and confidence: {}", jobNo, extractedValue, confidence);
+                    } else {
+                        // Log if an unexpected fieldName is encountered, but don't error out
+                        log.debug("Encountered unexpected field name '{}' in FieldConfidence for Job No: {}", fieldName, jobNo);
                     }
                 }
+            } else {
+                log.warn("FieldConfidences list is null in LLM response for Job No: {}", jobNo);
             }
 
-            // Check if we need to extract from the raw response (for the new format)
-            if (extractedIdentifiers.isEmpty() && result.getRawLlmResponse() != null) {
-                String rawResponse = result.getRawLlmResponse();
-                log.info("Attempting to extract identifiers from raw LLM response for Job No: {}", jobNo);
+            // The complex regex-based parsing of result.getRawLlmResponse() is now removed.
+            // The fallback to individual document processing (llmProxyService.extractDocumentIdentifiers) is also removed
+            // as the initial call to classifyAndVerifyDocument should provide all necessary identifiers.
 
-                // Try to extract document type and identifier from the raw response
-                try {
-                    // First, look for JSON array pattern in the response
-                    Pattern arrayPattern = Pattern.compile("\\[\\s*\\{[\\s\\S]*?\\}\\s*\\]");
-                    Matcher arrayMatcher = arrayPattern.matcher(rawResponse);
-
-                    if (arrayMatcher.find()) {
-                        String arrayStr = arrayMatcher.group(0);
-                        log.debug("Found JSON array in raw response: {}", arrayStr);
-
-                        // Try to parse the array as JSON
-                        try {
-                            ObjectMapper objectMapper = new ObjectMapper();
-                            JsonNode jsonArray = objectMapper.readTree(arrayStr);
-
-                            if (jsonArray.isArray()) {
-                                log.info("Successfully parsed JSON array with {} elements", jsonArray.size());
-
-                                // Process each element in the array
-                                for (JsonNode item : jsonArray) {
-                                    if (item.has("document_type") && item.has("identifier_value")) {
-                                        String documentType = item.get("document_type").asText();
-                                        String identifierLabel = item.has("identifier_label") ?
-                                                item.get("identifier_label").asText() : "";
-                                        String identifierValue = item.get("identifier_value").asText();
-
-                                        log.info("Extracted from JSON array - Document Type: {}, Label: {}, Value: {}",
-                                                documentType, identifierLabel, identifierValue);
-
-                                        if (documentType.toLowerCase().contains("sales quote")) {
-                                            extractedIdentifiers.put(SALES_QUOTE_NUMBER_KEY, identifierValue);
-                                            log.info("Extracted Sales Quote No: {} from JSON array for Job No: {}",
-                                                    identifierValue, jobNo);
-                                        } else if (documentType.toLowerCase().contains("proforma invoice")) {
-                                            extractedIdentifiers.put(PROFORMA_INVOICE_NUMBER_KEY, identifierValue);
-                                            log.info("Extracted Proforma Invoice No: {} from JSON array for Job No: {}",
-                                                    identifierValue, jobNo);
-                                        } else if (documentType.toLowerCase().contains("job shipment")) {
-                                            extractedIdentifiers.put(JOB_CONSUMPTION_NUMBER_KEY, identifierValue);
-                                            log.info("Extracted Job Shipment No: {} from JSON array for Job No: {}",
-                                                    identifierValue, jobNo);
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            log.warn("Failed to parse JSON array: {}", e.getMessage());
-                            // Continue to fallback extraction
-                        }
-                    }
-
-                    // Fallback: Look for individual JSON objects if array parsing failed
-                    if (extractedIdentifiers.isEmpty()) {
-                        Pattern jsonPattern = Pattern.compile("\\{[\\s\\S]*?\"document_type\"[\\s\\S]*?\"identifier_value\"[\\s\\S]*?\\}");
-                        Matcher jsonMatcher = jsonPattern.matcher(rawResponse);
-
-                        while (jsonMatcher.find()) {
-                            String jsonStr = jsonMatcher.group(0);
-                            log.debug("Found JSON object in raw response: {}", jsonStr);
-
-                            // Extract document type
-                            Pattern docTypePattern = Pattern.compile("\"document_type\"\\s*:\\s*\"([^\"]+)\"");
-                            Matcher docTypeMatcher = docTypePattern.matcher(jsonStr);
-
-                            // Extract identifier value
-                            Pattern identifierPattern = Pattern.compile("\"identifier_value\"\\s*:\\s*\"([^\"]+)\"");
-                            Matcher identifierMatcher = identifierPattern.matcher(jsonStr);
-
-                            if (docTypeMatcher.find() && identifierMatcher.find()) {
-                                String documentType = docTypeMatcher.group(1);
-                                String identifierValue = identifierMatcher.group(1);
-
-                                log.info("Extracted from raw response - Document Type: {}, Identifier Value: {}",
-                                        documentType, identifierValue);
-
-                                if (documentType.toLowerCase().contains("sales quote")) {
-                                    extractedIdentifiers.put(SALES_QUOTE_NUMBER_KEY, identifierValue);
-                                    log.info("Extracted Sales Quote No: {} from raw response for Job No: {}",
-                                            identifierValue, jobNo);
-                                } else if (documentType.toLowerCase().contains("proforma invoice")) {
-                                    extractedIdentifiers.put(PROFORMA_INVOICE_NUMBER_KEY, identifierValue);
-                                    log.info("Extracted Proforma Invoice No: {} from raw response for Job No: {}",
-                                            identifierValue, jobNo);
-                                } else if (documentType.toLowerCase().contains("job shipment")) {
-                                    extractedIdentifiers.put(JOB_CONSUMPTION_NUMBER_KEY, identifierValue);
-                                    log.info("Extracted Job Shipment No: {} from raw response for Job No: {}",
-                                            identifierValue, jobNo);
-                                }
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    log.error("Error extracting identifiers from raw LLM response for Job No: {}: {}",
-                            jobNo, e.getMessage(), e);
-                }
+            if (result.getErrorMessage() != null && !result.getErrorMessage().isEmpty()) {
+                log.warn("LLM service reported an error/validation issue for Job No: {}: {}", jobNo, result.getErrorMessage());
+                // This error message might indicate missing identifiers, e.g., "Validation Error (SalesQuote): Cannot find Sales Quote Number..."
+                // The presence of an error message doesn't necessarily mean ALL identifiers are missing,
+                // so we still proceed to cache whatever was found. The calling methods will handle critical missing identifiers.
             }
 
-            // If we didn't get all the identifiers we need, try processing individual document types
-            if (!extractedIdentifiers.containsKey(SALES_QUOTE_NUMBER_KEY) || !extractedIdentifiers.containsKey(PROFORMA_INVOICE_NUMBER_KEY)) {
-                log.info("Not all required identifiers extracted from combined processing. Trying individual document types for Job No: {}", jobNo);
-
-                // Process Sales Quote
-                if (!extractedIdentifiers.containsKey(SALES_QUOTE_NUMBER_KEY)) {
-                    List<byte[]> salesQuoteImages = getDocumentImagesFromDatabase(jobNo, SALES_QUOTE_TYPE);
-                    if (!salesQuoteImages.isEmpty()) {
-                        Map<String, String> identifiers = llmProxyService.extractDocumentIdentifiers(jobNo, SALES_QUOTE_TYPE, salesQuoteImages);
-                        String salesQuoteNo = identifiers.get(SALES_QUOTE_NUMBER_KEY);
-                        if (!isNotFound(salesQuoteNo)) {
-                            extractedIdentifiers.put(SALES_QUOTE_NUMBER_KEY, salesQuoteNo);
-                            log.info("Extracted Sales Quote No: {} from individual document for Job No: {}", salesQuoteNo, jobNo);
-                        }
-                    }
-                }
-
-                // Process Proforma Invoice
-                if (!extractedIdentifiers.containsKey(PROFORMA_INVOICE_NUMBER_KEY)) {
-                    List<byte[]> proformaInvoiceImages = getDocumentImagesFromDatabase(jobNo, PROFORMA_INVOICE_TYPE);
-                    if (!proformaInvoiceImages.isEmpty()) {
-                        Map<String, String> identifiers = llmProxyService.extractDocumentIdentifiers(jobNo, PROFORMA_INVOICE_TYPE, proformaInvoiceImages);
-                        String proformaInvoiceNo = identifiers.get(PROFORMA_INVOICE_NUMBER_KEY);
-                        if (!isNotFound(proformaInvoiceNo)) {
-                            extractedIdentifiers.put(PROFORMA_INVOICE_NUMBER_KEY, proformaInvoiceNo);
-                            log.info("Extracted Proforma Invoice No: {} from individual document for Job No: {}", proformaInvoiceNo, jobNo);
-                        }
-                    }
-                }
-            }
 
         } catch (Exception e) {
             log.error("Error during document identifier extraction for Job No: {}: {}", jobNo, e.getMessage(), e);
         }
 
-        // Cache the extracted identifiers for future use
+        // Cache the extracted identifiers for future use, even if some are missing,
+        // as partial data might be useful or errors need to be reported based on what was found.
         if (!extractedIdentifiers.isEmpty()) {
             extractedIdentifiersCache.put(jobNo, new HashMap<>(extractedIdentifiers));
             log.info("Cached extracted identifiers for Job No: {}: {}", jobNo, extractedIdentifiers);
