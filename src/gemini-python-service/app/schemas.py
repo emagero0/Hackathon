@@ -33,16 +33,18 @@ class IdentifierExtractionResponse(BaseModel):
 
 class Discrepancy(BaseModel):
     field_name: str
-    document_value: str
-    erp_value: str
+    document_value: Optional[str] = None # Made Optional
+    erp_value: Optional[str] = None      # Made Optional
     severity: str = Field(default="medium")
     description: Optional[str] = None
+    discrepancy_type: Optional[str] = None # Added
 
 class FieldConfidence(BaseModel):
-    field_name: str
-    confidence: float
+    field_name: str # Will contain prefixed names like "SalesQuote.CustomerName"
     extracted_value: Optional[str] = None
-    verified: bool = False
+    extraction_confidence: float # Renamed from confidence
+    match_assessment_confidence: Optional[float] = None # Added
+    verified: bool = False # Likely defaults to False from Python now
 
 class ExtractedValues(BaseModel): # Placeholder if you want to return all extracted values
     header: Dict[str, Any] = {}

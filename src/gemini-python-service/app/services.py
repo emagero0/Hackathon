@@ -312,43 +312,45 @@ def _build_sales_quote_prompt(job_no: str, erp_data: Dict[str, Any]) -> Dict[str
             "outputSchema": {
                 "discrepancies": [
                     {
-                        "discrepancy_type": "VALUE_MISMATCH | MISSING_IN_DOCUMENT | UNEXPECTED_IN_DOCUMENT | FORMAT_ERROR",
+                        "discrepancy_type": "MISSING_IN_DOCUMENT | UNEXPECTED_IN_DOCUMENT | FORMAT_ERROR | VALUE_MISMATCH_FUZZY", # VALUE_MISMATCH for fuzzy only
                         "field_name": "string (e.g., 'header.Sell_to_Customer_Name', 'lines.0.Quantity')",
-                        "expected_value": "any",
+                        "expected_value": "any (especially for fuzzy matches)",
                         "actual_value": "any",
-                        "description": "string (Formatted like: 'Sales Quote Header vs BC Mismatch: Document Sell_to_Customer_Name ('Actual Name Ltd') != BC Sell_to_Customer_Name ('Customer A Inc.').')",
-                        "confidence": "float (0.0-1.0)"
+                        "description": "string (Describe why it's missing, unexpected, or details of a fuzzy mismatch. Backend generates most exact mismatches.)",
+                        "confidence": "float (0.0-1.0, for LLM's confidence in this discrepancy finding)"
                     }
                 ],
                 "field_confidences": [
                     {
-                        "field_name": "string",
-                        "extracted_value": "any",
-                        "verification_confidence": "float (0.0-1.0)",
-                        "extraction_confidence": "float (0.0-1.0)"
+                        "field_name": "string (e.g., 'header.Sales_Quote_Number', 'lines.0.Description')",
+                        "extracted_value": "any (The raw value extracted from the document)",
+                        "extraction_confidence": "float (0.0-1.0, LLM's confidence in the accuracy of extracted_value)",
+                        "match_assessment_confidence": "float (0.0-1.0, Optional: LLM's confidence if it performed a fuzzy match comparison against an expected value. Otherwise null.)"
                     }
                 ],
-                "overall_verification_confidence": "float (0.0-1.0)"
+                "overall_verification_confidence": "float (0.0-1.0, LLM's overall confidence in the extraction and any performed fuzzy matches)"
             },
             "headerFieldsToVerify": [
-                {"documentFieldName": "Sales Quote Number", "erpPath": "salesQuoteHeader.No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Sales Quote Number ('{actual}') != BC No ('{expected}')."},
-                {"documentFieldName": "Customer Account Number", "erpPath": "salesQuoteHeader.Sell_to_Customer_No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Account No ('{actual}') != BC Sell_to_Customer_No ('{expected}')."},
-                {"documentFieldName": "Customer Name", "erpPath": "salesQuoteHeader.Sell_to_Customer_Name", "comparisonType": "fuzzy_match_ignore_case_whitespace", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Customer Name ('{actual}') != BC Sell_to_Customer_Name ('{expected}')."},
-                {"documentFieldName": "Total Amount Including VAT", "erpPath": "salesQuoteHeader.Amount_Including_VAT", "comparisonType": "numeric_match_2_decimals", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Total Amount ('{actual}') != BC Amount_Including_VAT ('{expected}')."}
+                {"documentFieldName": "Sales Quote Number", "instruction": "Extract the Sales Quote Number (usually format 'SQXXXXXX').", "erpPath": "salesQuoteHeader.No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Sales Quote Number ('{actual}') != BC No ('{expected}')."},
+                {"documentFieldName": "Customer Account Number", "instruction": "Extract the Customer Account Number.", "erpPath": "salesQuoteHeader.Sell_to_Customer_No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Account No ('{actual}') != BC Sell_to_Customer_No ('{expected}')."},
+                {"documentFieldName": "Customer Name", "instruction": "Extract the Customer Name. If expected data is available, assess fuzzy match.", "erpPath": "salesQuoteHeader.Sell_to_Customer_Name", "comparisonType": "fuzzy_match_ignore_case_whitespace", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Customer Name ('{actual}') != BC Sell_to_Customer_Name ('{expected}')."},
+                {"documentFieldName": "Total Amount Including VAT", "instruction": "Extract the Total Amount Including VAT. Extract as a numeric string, preserving original format as much as possible (e.g. '22,200.00').", "erpPath": "salesQuoteHeader.Amount_Including_VAT", "comparisonType": "numeric_match_2_decimals", "discrepancyFormat": "Sales Quote Header vs BC Mismatch: Document Total Amount ('{actual}') != BC Amount_Including_VAT ('{expected}')."}
             ],
             "lineItemFieldsToVerify": [
-                {"documentFieldName": "Description", "erpPath": "Description", "comparisonType": "fuzzy_match_ignore_case_whitespace", "isKeyForMatching": True},
-                {"documentFieldName": "Quantity", "erpPath": "Quantity", "comparisonType": "numeric_match_allow_integer_vs_decimal", "discrepancyFormat": "Sales Quote PDF vs BC Line Item '{matchedDescription}' Mismatch: Quantities differ (Document: {actual}, BC: {expected})."}
+                {"documentFieldName": "Description", "instruction": "Extract the line item Description. This is key for matching. If expected data is available, assess fuzzy match.", "erpPath": "Description", "comparisonType": "fuzzy_match_ignore_case_whitespace", "isKeyForMatching": True},
+                {"documentFieldName": "Quantity", "instruction": "Extract the line item Quantity. Extract as a numeric string.", "erpPath": "Quantity", "comparisonType": "numeric_match_allow_integer_vs_decimal", "discrepancyFormat": "Sales Quote PDF vs BC Line Item '{matchedDescription}' Mismatch: Quantities differ (Document: {actual}, BC: {expected})."}
             ],
             "generalInstructions": [
                 "Analyze the provided document images which represent a Sales Quote.",
-                "Extract all header fields as specified in 'headerFieldsToVerify'.",
-                "Extract all line items. For each line item, extract fields specified in 'lineItemFieldsToVerify'.",
+                "For each field in 'headerFieldsToVerify' and 'lineItemFieldsToVerify', meticulously extract its value from the document based on the provided 'instruction'.",
+                "Return the raw extracted value for each field. For numeric fields, extract the value as seen in the document, preserving original formatting as much as possible unless instructed otherwise.",
+                "For fields with 'fuzzy_match_ignore_case_whitespace' comparisonType, if corresponding 'expectedErpData' is available, you may also provide a 'match_assessment_confidence' for your comparison.",
+                "If you cannot find a field, report it in 'discrepancies' as 'MISSING_IN_DOCUMENT'.",
+                "If you find clearly extra fields not specified for extraction but seem important, you may report them as 'UNEXPECTED_IN_DOCUMENT'.",
                 "Match extracted line items to ERP line items primarily using 'Description' (fuzzy match).",
-                "For each specified field, compare the extracted value from the document with the value from 'expectedErpData' using the specified 'comparisonType'.",
-                "If a discrepancy is found, use the 'discrepancyFormat' string to generate the description. Replace {actual} with the value found in the document and {expected} with the value from 'expectedErpData'. For line items, {matchedDescription} is the description of the matched line item.",
                 "Report all findings in the JSON format defined in 'outputSchema'.",
-                "Provide confidence scores (0.0 to 1.0) for each extracted field's accuracy and for each verification decision (match/mismatch)."
+                "Provide 'extraction_confidence' for every extracted field. This reflects your certainty about the accuracy of the extracted text/value itself.",
+                "The backend service will perform most of the strict comparisons against ERP data using your extracted values."
             ]
         }
     }
@@ -377,43 +379,46 @@ def _build_proforma_invoice_prompt(job_no: str, erp_data: Dict[str, Any]) -> Dic
         "verificationInstructions": {
             "outputSchema": {
                 "discrepancies": [
-                    {
-                        "discrepancy_type": "VALUE_MISMATCH | MISSING_IN_DOCUMENT | UNEXPECTED_IN_DOCUMENT | FORMAT_ERROR",
-                        "field_name": "string (e.g., 'header.Sell_to_Customer_Name', 'lines.0.Quantity')",
-                        "expected_value": "any",
+                     {
+                        "discrepancy_type": "MISSING_IN_DOCUMENT | UNEXPECTED_IN_DOCUMENT | FORMAT_ERROR | VALUE_MISMATCH_FUZZY",
+                        "field_name": "string",
+                        "expected_value": "any (for fuzzy matches)",
                         "actual_value": "any",
-                        "description": "string (Formatted like: 'Proforma Invoice Header vs BC Mismatch: Document Sell_to_Customer_Name ('Actual Name Ltd') != BC Sell_to_Customer_Name ('Customer A Inc.').')",
-                        "confidence": "float (0.0-1.0)"
+                        "description": "string (Describe missing/unexpected fields or fuzzy mismatch details. Backend handles most exact mismatches.)",
+                        "confidence": "float (0.0-1.0, for LLM's confidence in this discrepancy finding)"
                     }
                 ],
                 "field_confidences": [
                     {
                         "field_name": "string",
-                        "extracted_value": "any",
-                        "verification_confidence": "float (0.0-1.0)",
-                        "extraction_confidence": "float (0.0-1.0)"
+                        "extracted_value": "any (Raw extracted value)",
+                        "extraction_confidence": "float (0.0-1.0, LLM's confidence in extracted_value accuracy)",
+                        "match_assessment_confidence": "float (0.0-1.0, Optional: LLM's confidence for fuzzy match comparison. Null otherwise.)"
                     }
                 ],
-                "overall_verification_confidence": "float (0.0-1.0)"
+                "overall_verification_confidence": "float (0.0-1.0, LLM's overall confidence in extraction and any fuzzy matches)"
             },
             "headerFieldsToVerify": [
-                {"documentFieldName": "Proforma Invoice Number", "erpPath": "salesInvoiceHeader.No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Proforma Invoice Header vs BC Mismatch: Document Proforma Invoice Number ('{actual}') != BC No ('{expected}')."},
-                {"documentFieldName": "Customer Account Number", "erpPath": "salesInvoiceHeader.Sell_to_Customer_No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Proforma Invoice Header vs BC Mismatch: Document Account No ('{actual}') != BC Sell_to_Customer_No ('{expected}')."},
-                {"documentFieldName": "Customer Name", "erpPath": "salesInvoiceHeader.Sell_to_Customer_Name", "comparisonType": "fuzzy_match_ignore_case_whitespace", "discrepancyFormat": "Proforma Invoice Header vs BC Mismatch: Document Customer Name ('{actual}') != BC Sell_to_Customer_Name ('{expected}')."}
+                {"documentFieldName": "Proforma Invoice Number", "instruction": "Extract the Proforma Invoice Number.", "erpPath": "salesInvoiceHeader.No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Proforma Invoice Header vs BC Mismatch: Document Proforma Invoice Number ('{actual}') != BC No ('{expected}')."},
+                {"documentFieldName": "Customer Account Number", "instruction": "Extract the Customer Account Number.", "erpPath": "salesInvoiceHeader.Sell_to_Customer_No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Proforma Invoice Header vs BC Mismatch: Document Account No ('{actual}') != BC Sell_to_Customer_No ('{expected}')."},
+                {"documentFieldName": "Customer Name", "instruction": "Extract the Customer Name. If expected data is available, assess fuzzy match.", "erpPath": "salesInvoiceHeader.Sell_to_Customer_Name", "comparisonType": "fuzzy_match_ignore_case_whitespace", "discrepancyFormat": "Proforma Invoice Header vs BC Mismatch: Document Customer Name ('{actual}') != BC Sell_to_Customer_Name ('{expected}')."}
+                # Add other header fields like Total Amount if applicable for Proforma, focusing on extraction.
             ],
             "lineItemFieldsToVerify": [
-                {"documentFieldName": "Description", "erpPath": "Description", "comparisonType": "fuzzy_match_ignore_case_whitespace", "isKeyForMatching": True},
-                {"documentFieldName": "Quantity", "erpPath": "Quantity", "comparisonType": "numeric_match_allow_integer_vs_decimal", "discrepancyFormat": "Proforma Invoice PDF vs BC Line Item '{matchedDescription}' Mismatch: Quantities differ (Document: {actual}, BC: {expected})."}
+                {"documentFieldName": "Description", "instruction": "Extract the line item Description. Key for matching. If expected data is available, assess fuzzy match.", "erpPath": "Description", "comparisonType": "fuzzy_match_ignore_case_whitespace", "isKeyForMatching": True},
+                {"documentFieldName": "Quantity", "instruction": "Extract the line item Quantity as a numeric string.", "erpPath": "Quantity", "comparisonType": "numeric_match_allow_integer_vs_decimal", "discrepancyFormat": "Proforma Invoice PDF vs BC Line Item '{matchedDescription}' Mismatch: Quantities differ (Document: {actual}, BC: {expected})."}
+                # Add other line item fields like Unit Price, Total Price if applicable, focusing on extraction.
             ],
             "generalInstructions": [
                 "Analyze the provided document images which represent a Proforma Invoice.",
-                "Extract all header fields as specified in 'headerFieldsToVerify'.",
-                "Extract all line items. For each line item, extract fields specified in 'lineItemFieldsToVerify'.",
-                "Match extracted line items to ERP line items primarily using 'Description' (fuzzy match).",
-                "For each specified field, compare the extracted value from the document with the value from 'expectedErpData' using the specified 'comparisonType'.",
-                "If a discrepancy is found, use the 'discrepancyFormat' string to generate the description. Replace {actual} with the value found in the document and {expected} with the value from 'expectedErpData'. For line items, {matchedDescription} is the description of the matched line item.",
+                "For each field in 'headerFieldsToVerify' and 'lineItemFieldsToVerify', meticulously extract its value from the document based on the 'instruction'.",
+                "Return the raw extracted value. For numeric fields, extract as seen, preserving format.",
+                "For fields with 'fuzzy_match_ignore_case_whitespace', if 'expectedErpData' is available, provide 'match_assessment_confidence'.",
+                "Report 'MISSING_IN_DOCUMENT' or 'UNEXPECTED_IN_DOCUMENT' discrepancies as appropriate.",
+                "Match line items using 'Description' (fuzzy match).",
                 "Report all findings in the JSON format defined in 'outputSchema'.",
-                "Provide confidence scores (0.0 to 1.0) for each extracted field's accuracy and for each verification decision (match/mismatch)."
+                "Provide 'extraction_confidence' for every extracted field.",
+                "The backend service will perform most strict comparisons."
             ]
         }
     }
@@ -441,46 +446,47 @@ def _build_job_consumption_prompt(job_no: str, erp_data: Dict[str, Any]) -> Dict
             "outputSchema": {
                 "discrepancies": [
                     {
-                        "discrepancy_type": "VALUE_MISMATCH | MISSING_IN_DOCUMENT | UNEXPECTED_IN_DOCUMENT | FORMAT_ERROR",
-                        "field_name": "string (e.g., 'header.Job_No', 'lines.0.Quantity')",
-                        "expected_value": "any",
+                        "discrepancy_type": "MISSING_IN_DOCUMENT | UNEXPECTED_IN_DOCUMENT | FORMAT_ERROR | VALUE_MISMATCH_FUZZY",
+                        "field_name": "string",
+                        "expected_value": "any (for fuzzy matches)",
                         "actual_value": "any",
-                        "description": "string (Formatted like: 'Job Consumption Header vs BC Mismatch: Document Job No ('{actual}') != BC Job_No ('{expected}').')",
-                        "confidence": "float (0.0-1.0)"
+                        "description": "string (Describe missing/unexpected fields or fuzzy mismatch details. Backend handles most exact mismatches.)",
+                        "confidence": "float (0.0-1.0, for LLM's confidence in this discrepancy finding)"
                     }
                 ],
                 "field_confidences": [
                     {
-                        "field_name": "string",
-                        "extracted_value": "any",
-                        "verification_confidence": "float (0.0-1.0)",
-                        "extraction_confidence": "float (0.0-1.0)"
+                        "field_name": "string (e.g. 'header.Job_Number', 'line.0.Description', 'additional.ReceivedBy_SignaturePresence')",
+                        "extracted_value": "any (Raw extracted value, or finding like 'Signature found')",
+                        "extraction_confidence": "float (0.0-1.0, LLM's confidence in extracted_value/finding accuracy)",
+                        "match_assessment_confidence": "float (0.0-1.0, Optional: LLM's confidence for fuzzy match comparison. Null otherwise.)"
                     }
                 ],
-                "overall_verification_confidence": "float (0.0-1.0)"
+                "overall_verification_confidence": "float (0.0-1.0, LLM's overall confidence in extraction and any fuzzy matches/semantic checks)"
             },
             "headerFieldsToVerify": [
-                {"documentFieldName": "Job Number", "erpPath": "requestContext.jobId", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Job Consumption Header vs BC Mismatch: Document Job Number ('{actual}') != Expected Job No ('{expected}')."}
+                {"documentFieldName": "Job Number", "instruction": "Extract the Job Number from the document.", "erpPath": "requestContext.jobId", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Job Consumption Header vs BC Mismatch: Document Job Number ('{actual}') != Expected Job No ('{expected}')."}
             ],
             "lineItemFieldsToVerify": [
-                {"documentFieldName": "Description", "erpPath": "Description", "comparisonType": "fuzzy_match_ignore_case_whitespace", "isKeyForMatching": True},
-                {"documentFieldName": "Quantity", "erpPath": "Quantity", "comparisonType": "numeric_match_allow_integer_vs_decimal", "discrepancyFormat": "Job Consumption PDF vs BC Line Item '{matchedDescription}' Mismatch: Quantities differ (Document: {actual}, BC: {expected})."},
-                {"documentFieldName": "Item/Resource No", "erpPath": "No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Job Consumption PDF vs BC Line Item '{matchedDescription}' Mismatch: Item/Resource No differs (Document: {actual}, BC: {expected}).", "optionalInDocument": True},
-                {"documentFieldName": "Type", "erpPath": "Type", "comparisonType": "exact_match_ignore_case", "discrepancyFormat": "Job Consumption PDF vs BC Line Item '{matchedDescription}' Mismatch: Type differs (Document: {actual}, BC: {expected}).", "optionalInDocument": True}
+                {"documentFieldName": "Description", "instruction": "Extract the line item Description. Key for matching. If expected data is available, assess fuzzy match.", "erpPath": "Description", "comparisonType": "fuzzy_match_ignore_case_whitespace", "isKeyForMatching": True},
+                {"documentFieldName": "Quantity", "instruction": "Extract the line item Quantity as a numeric string.", "erpPath": "Quantity", "comparisonType": "numeric_match_allow_integer_vs_decimal", "discrepancyFormat": "Job Consumption PDF vs BC Line Item '{matchedDescription}' Mismatch: Quantities differ (Document: {actual}, BC: {expected})."},
+                {"documentFieldName": "Item/Resource No", "instruction": "Extract the Item or Resource Number for the line item, if present.", "erpPath": "No", "comparisonType": "exact_match_alphanumeric_only", "discrepancyFormat": "Job Consumption PDF vs BC Line Item '{matchedDescription}' Mismatch: Item/Resource No differs (Document: {actual}, BC: {expected}).", "optionalInDocument": True},
+                {"documentFieldName": "Type", "instruction": "Extract the Type for the line item (e.g., Item, Resource), if present.", "erpPath": "Type", "comparisonType": "exact_match_ignore_case", "discrepancyFormat": "Job Consumption PDF vs BC Line Item '{matchedDescription}' Mismatch: Type differs (Document: {actual}, BC: {expected}).", "optionalInDocument": True}
             ],
             "additionalVerifications": [
-                {"verificationType": "signature_presence", "description": "Check if the 'Received By' section contains a signature or name.", "discrepancyFormat": "Job Consumption PDF Missing Signature: The 'Received By' section does not appear to be signed or contain a name."}
+                {"fieldName": "ReceivedBy_SignaturePresence", "instruction": "Check if the 'Received By' section contains a signature OR a printed name. Report your finding as 'Signature found', 'Printed name found: [name]', 'Signature and printed name found: [name]', or 'Signature/Name not found'.", "discrepancyFormat": "Job Consumption PDF Missing Signature/Name: The 'Received By' section does not appear to be signed or contain a printed name."}
             ],
             "generalInstructions": [
                 "Analyze the provided document images which represent a Job Consumption document.",
-                "Extract the Job Number from the header and verify it matches the jobId in the requestContext.",
-                "Extract all line items. For each line item, extract fields specified in 'lineItemFieldsToVerify'.",
-                "Match extracted line items to ERP job ledger entries primarily using 'Description' (fuzzy match).",
-                "For each specified field, compare the extracted value from the document with the value from 'expectedErpData' using the specified 'comparisonType'.",
-                "If a discrepancy is found, use the 'discrepancyFormat' string to generate the description. Replace {actual} with the value found in the document and {expected} with the value from 'expectedErpData'. For line items, {matchedDescription} is the description of the matched line item.",
-                "Check if the 'Received By' section contains a signature or name. If not, report it as a discrepancy.",
+                "For each field in 'headerFieldsToVerify' and 'lineItemFieldsToVerify', meticulously extract its value from the document based on the 'instruction'.",
+                "For the check in 'additionalVerifications', report your finding and confidence in 'field_confidences' using the specified 'fieldName'.",
+                "Return raw extracted values. For numeric fields, extract as seen, preserving format.",
+                "For fields with 'fuzzy_match_ignore_case_whitespace', if 'expectedErpData' is available, provide 'match_assessment_confidence'.",
+                "Report 'MISSING_IN_DOCUMENT' or 'UNEXPECTED_IN_DOCUMENT' discrepancies as appropriate.",
+                "Match line items using 'Description' (fuzzy match).",
                 "Report all findings in the JSON format defined in 'outputSchema'.",
-                "Provide confidence scores (0.0 to 1.0) for each extracted field's accuracy and for each verification decision (match/mismatch)."
+                "Provide 'extraction_confidence' for every extracted field and performed check.",
+                "The backend service will perform most strict comparisons."
             ]
         }
     }
@@ -1251,141 +1257,16 @@ async def verify_document_with_gemini(
 
     # Check if this is a combined verification request (multiple documents)
     if document_type == "combined" or document_type == "all":
-        logger.info(f"Using cross-document verification prompt for job {request_data.job_no}")
-        # Use our comprehensive cross-document verification prompt
-        prompt_text = """
-Instructions for AI Validation Agent
-
-Carefully extract and compare relevant fields across the following document types:
-
-    Sales Quote PDF
-    Proforma Invoice PDF
-    Job Consumption PDF
-
-Where examples are provided, treat them as representative formats — actual values must be matched dynamically based on document content, not by fixed hardcoding.
-
-🔎 Step 1: Account Number Consistency
-
-Check:
-    Extract the Account Number from all three documents.
-        Example from PDF: Account No : 1839
-        Expected match format in BC: "Sell_to_Customer_No": "1839"
-
-Validation Rule:
-    All extracted Account No values must be identical across:
-        Sales Quote
-        Proforma Invoice
-        Job Consumption
-    The extracted Account No from Sales Quote must match the corresponding "Sell_to_Customer_No" field from BC data.
-
-Fail Condition:
-If any mismatch is found, return:
-❌ Validation Error: Inconsistent Account Numbers across documents or mismatch with BC data.
-
-🔎 Step 2: Description and Quantity Consistency Across Documents
-
-Check:
-    For each document, extract the item description and quantity line-by-line from the tabular sections.
-
-Expected format examples (actual content may vary):
-    Description: "PEDROLLO PKm60 0.37kW PUMP"
-    Quantity: Must be identical across all documents (e.g., 5 in Sales Quote, 5 in Proforma Invoice, 5 in Job Consumption)
-
-Validation Rule:
-    All documents must reference identical item descriptions.
-    Quantities must match exactly across all documents.
-
-Fail Condition:
-If item descriptions or quantities do not structurally and semantically match:
-❌ Validation Error: Mismatch in item descriptions or quantities between documents.
-
-🔎 Step 3: Total KES (Amount) Consistency
-
-Check:
-    Extract the Total KES or equivalent final total field from:
-        Sales Quote
-        Proforma Invoice
-
-Example format:
-    Sales Quote: Total KES 22,200.00
-    Proforma Invoice: Total KES 22,200.00
-
-Validation Rule:
-    The totals must match precisely between Sales Quote and Proforma Invoice.
-
-Fail Condition:
-❌ Validation Error: Total KES mismatch between Sales Quote and Proforma Invoice.
-
-🔎 Step 4: Business Central (BC) Field Matching
-
-Sales Quote Matching:
-    "Account No" (e.g. 1839) ↔ "Sell_to_Customer_No" in BC
-    "SQ1007475" ↔ "Document_No" in BC
-    Extracted description and quantity ↔ "Description" and "Quantity" fields in BC
-
-Job Consumption Matching:
-    Extracted item description and quantity ↔ "Description" and "Quantity" in BC
-        Example: "GENERATOR MAINTENANCE 3/DS/BDI/2025", Quantity: 1
-
-Proforma Invoice Matching:
-    "Account No" ↔ "Sell_to_Customer_No" in BC
-    Extracted item description and quantity ↔ "Description" and "Quantity" in BC
-
-Fail Condition (any mismatch):
-❌ Validation Error: Document content does not match corresponding BC field: [Specify mismatched field and document]
-
-✅ Success Output
-
-If all checks pass with full structural and data consistency:
-✅ All documents are consistent, aligned in content, and validated against Business Central data.
-
-Return your response in structured JSON format with the following fields:
-{
-  "documentType": "COMBINED_VERIFICATION",
-  "classificationConfidence": 0.95,
-  "classificationReasoning": "Cross-document verification completed",
-  "discrepancies": [
-    {
-      "field_name": "Account Number",
-      "document_value": "1839 (Sales Quote), 1840 (Proforma Invoice)",
-      "erp_value": "1839",
-      "severity": "high",
-      "description": "Account number mismatch between Sales Quote and Proforma Invoice"
-    }
-  ],
-  "fieldConfidences": [
-    {
-      "field_name": "Sales Quote Number",
-      "confidence": 0.98,
-      "extracted_value": "SQ1007475",
-      "verified": true
-    },
-    {
-      "field_name": "Proforma Invoice Number",
-      "confidence": 0.97,
-      "extracted_value": "1595499",
-      "verified": true
-    },
-    {
-      "field_name": "Account Number",
-      "confidence": 0.95,
-      "extracted_value": "1839",
-      "verified": true
-    }
-  ],
-  "overallVerificationConfidence": 0.92
-}
-
-The Business Central data for verification is provided in the following structure:
-"""
-
-        # Add the ERP data to the prompt
-        prompt_text += json.dumps(request_data.erp_data, indent=2)
-
-        # Use the text prompt directly
-        prompt_structure = prompt_text
+        logger.warning(f"Attempted to call verify_document_with_gemini with document_type '{request_data.document_type}'. Cross-document verification is now orchestrated by the backend. This path should not be directly called for combined checks and will return an empty response.")
+        return schemas.VerificationResponse(
+            error_message="Cross-document verification is orchestrated by the backend. This path should not be directly called for combined checks.",
+            discrepancies=[],
+            field_confidences=[],
+            overall_verification_confidence=0.0
+        )
     else:
         # Use the existing document-specific prompts for individual document verification
+        prompt_structure = None # Initialize prompt_structure
         if document_type == "salesquote":
             prompt_structure = _build_sales_quote_prompt(request_data.job_no, request_data.erp_data)
         elif document_type == "proformainvoice":
