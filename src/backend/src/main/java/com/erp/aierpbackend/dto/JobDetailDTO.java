@@ -20,24 +20,21 @@ public class JobDetailDTO {
     private String customerName;
     private Job.JobStatus status;
     private LocalDateTime lastProcessedAt;
-    // Removed verificationDetails field
-
-    // Removed inner VerificationDetailsDTO class
-
-    // Removed inner DiscrepancyDTO class (no longer needed here)
+    private String verificationResult;
+    private Boolean hasDiscrepancies;
 
 
     // Static factory method for easy conversion from Entity
     public static JobDetailDTO fromEntity(Job job) {
-        // Removed logic related to VerificationResult and Discrepancy
         return new JobDetailDTO(
                 job.getId(),
                 job.getBusinessCentralJobId(),
                 job.getJobTitle(),
                 job.getCustomerName(),
                 job.getStatus(),
-                job.getLastProcessedAt()
-                // Removed verificationDTO argument
+                job.getLastProcessedAt(),
+                job.getVerificationResult(),
+                job.getHasDiscrepancies()
         );
     }
 }

@@ -28,6 +28,7 @@ public class LLMProxyService {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper; // For synchronous parsing if needed, or for request prep
+    private final SystemErrorHandler systemErrorHandler;
 
     @Value("${llm.python.service.baseurl}") // e.g., http://gemini-python-service:8000
     private String llmServiceBaseUrl;
@@ -36,9 +37,11 @@ public class LLMProxyService {
     private static final String SALES_QUOTE_NUMBER_KEY_FROM_LLM = "salesQuoteNo"; // Or make it generic
 
     public LLMProxyService(WebClient.Builder webClientBuilder, ObjectMapper objectMapper,
+                           SystemErrorHandler systemErrorHandler,
                            @Value("${llm.python.service.baseurl}") String llmServiceBaseUrl) {
         this.webClient = webClientBuilder.baseUrl(llmServiceBaseUrl).build();
         this.objectMapper = objectMapper;
+        this.systemErrorHandler = systemErrorHandler;
         this.llmServiceBaseUrl = llmServiceBaseUrl; // Ensure it's set if used directly
         log.info("LLMProxyService initialized. Python service base URL: {}", this.llmServiceBaseUrl);
     }
@@ -183,34 +186,31 @@ public class LLMProxyService {
 
         ClassificationRequestPayload payload = new ClassificationRequestPayload(jobNo, imagePayloads);
 
-        return webClient.post()
-                .uri("/classify_document")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(payload)
-                .retrieve()
-                .bodyToMono(DocumentClassificationResult.class)
-                // Add timeout to prevent hanging indefinitely
-                .timeout(Duration.ofSeconds(30))
-                .doOnError(e -> log.error("Error or timeout calling LLM service for document classification (job '{}'): {}",
-                        jobNo, e.getMessage(), e))
-                .onErrorResume(e -> {
-                    // Create a fallback response with UNKNOWN type
-                    DocumentClassificationResult fallback = new DocumentClassificationResult();
-                    fallback.setDocumentType("UNKNOWN");
-                    fallback.setConfidence(0.0);
-                    fallback.setReasoning("Error calling LLM service: " + e.getMessage());
-
-                    if (e instanceof java.util.concurrent.TimeoutException) {
-                        log.error("Timeout while waiting for LLM classification response for job '{}'", jobNo);
-                        fallback.setReasoning("Timeout while waiting for classification response");
-                    } else {
-                        log.error("Error calling LLM service for document classification (job '{}'): {}",
-                                jobNo, e.getMessage(), e);
-                        fallback.setReasoning("Error calling LLM service: " + e.getMessage());
-                    }
-
-                    return Mono.just(fallback);
-                });
+        return systemErrorHandler.withSystemErrorRetry(
+                webClient.post()
+                        .uri("/classify_document")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(payload)
+                        .retrieve()
+                        .bodyToMono(DocumentClassificationResult.class)
+                        .timeout(Duration.ofSeconds(30)),
+                "LLM document classification"
+        ).onErrorResume(e -> {
+            if (systemErrorHandler.isSystemError(e)) {
+                // System error - create fallback response without exposing details
+                log.error("System error during LLM document classification for job '{}': {}", jobNo, e.getMessage());
+                DocumentClassificationResult fallback = new DocumentClassificationResult();
+                fallback.setDocumentType("UNKNOWN");
+                fallback.setConfidence(0.0);
+                fallback.setReasoning("System temporarily unavailable");
+                return Mono.just(fallback);
+            } else {
+                // Business logic error - propagate with details
+                log.error("Business logic error during LLM document classification for job '{}': {}", jobNo, e.getMessage());
+                return Mono.error(new SystemErrorHandler.BusinessLogicErrorException(
+                        "Document classification failed: " + e.getMessage(), e));
+            }
+        });
     }
 
     public GeminiVerificationResult verifyDocument(
@@ -320,8 +320,21 @@ public class LLMProxyService {
 
             if (response != null) {
                 if (response.getErrorMessage() != null && !response.getErrorMessage().isEmpty()) {
-                    log.error("Error from LLM service (classify_and_verify) for job {}: {}", jobNo, response.getErrorMessage());
-                    throw new IOException("LLM service error: " + response.getErrorMessage());
+                    String errorMessage = response.getErrorMessage();
+                    log.error("Error from LLM service (classify_and_verify) for job {}: {}", jobNo, errorMessage);
+
+                    // Check if this is a business logic error (missing identifiers)
+                    if (errorMessage.toLowerCase().contains("cannot find") &&
+                        (errorMessage.toLowerCase().contains("sales quote number") ||
+                         errorMessage.toLowerCase().contains("tax invoice number") ||
+                         errorMessage.toLowerCase().contains("job number"))) {
+                        // This is a business logic error - missing identifier
+                        throw new SystemErrorHandler.BusinessLogicErrorException(errorMessage);
+                    } else {
+                        // This is a system error
+                        throw new SystemErrorHandler.SystemErrorException("LLM service error: " + errorMessage,
+                                new IOException(errorMessage));
+                    }
                 }
 
                 if (isInitialClassification) {
@@ -337,10 +350,21 @@ public class LLMProxyService {
                 log.error("No response from LLM service (classify_and_verify) for job {}", jobNo);
                 throw new IOException("No response from LLM service for document classification and verification.");
             }
+        } catch (SystemErrorHandler.BusinessLogicErrorException | SystemErrorHandler.SystemErrorException e) {
+            // Re-throw our custom exceptions as-is
+            throw e;
         } catch (Exception e) {
             log.error("Error calling LLM service for document classification and verification (job {}): {}",
                     jobNo, e.getMessage(), e);
-            throw new IOException("Failed to call LLM service for document classification and verification: " + e.getMessage(), e);
+
+            // Check if this is a system error that should be retried
+            if (systemErrorHandler.isSystemError(e)) {
+                throw new SystemErrorHandler.SystemErrorException(
+                        "Failed to call LLM service for document classification and verification: " + e.getMessage(), e);
+            } else {
+                throw new SystemErrorHandler.BusinessLogicErrorException(
+                        "Failed to call LLM service for document classification and verification: " + e.getMessage(), e);
+            }
         }
     }
 

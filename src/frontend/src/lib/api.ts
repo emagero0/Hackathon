@@ -78,9 +78,11 @@ export const requestVerification = async (jobNo: string): Promise<{ verification
 };
 
 // New function to fetch the latest verification result for a job
-export const getLatestVerificationForJob = async (jobNo: string): Promise<LatestVerificationResponse | null> => {
+export const getLatestVerificationForJob = async (jobNo: string, timestamp?: number): Promise<LatestVerificationResponse | null> => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/verifications/job/${jobNo}/latest`); // Corrected endpoint path
+    // Add cache-busting parameter if timestamp is provided
+    const cacheBuster = timestamp ? `?_=${timestamp}` : '';
+    const response = await axios.get(`${API_BASE_URL}/verifications/job/${jobNo}/latest${cacheBuster}`);
     return response.data;
   } catch (error: any) { // Use 'any' or 'unknown' and check type
     if (axios.isAxiosError(error) && error.response?.status === 404) {

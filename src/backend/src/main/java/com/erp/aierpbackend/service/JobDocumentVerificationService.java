@@ -212,8 +212,25 @@ public class JobDocumentVerificationService {
                 }
             }
 
+            // Check for missing identifiers and provide specific error messages
+            if (isNotFound(extractedSalesQuoteNo)) {
+                finalDiscrepancies.add("Cannot find Sales Quote Number from Sales Quote document");
+                log.warn("Cannot find Sales Quote Number from Sales Quote document for Job No: {}", jobNo);
+            }
+
+            if (isNotFound(extractedProformaInvoiceNo)) {
+                finalDiscrepancies.add("Cannot find Tax Invoice Number from Proforma Invoice document - please check Proforma Invoice");
+                log.warn("Cannot find Tax Invoice Number from Proforma Invoice document for Job No: {}", jobNo);
+            }
+
+            // If we have missing identifiers, return early
+            if (!finalDiscrepancies.isEmpty()) {
+                log.warn("Missing required document identifiers for Job No: {}. Cannot proceed with verification.", jobNo);
+                return finalDiscrepancies;
+            }
+
             // Now fetch Business Central data using the extracted document numbers
-            log.info("Fetching Business Central data using extracted document numbers. Quote No: {}, Invoice No: {}, Job No: {}",
+            log.info("Using extracted document numbers for verification - Sales Quote No: {}, Proforma Invoice No: {}, Job No: {}",
                     extractedSalesQuoteNo, extractedProformaInvoiceNo, jobNo);
 
             var bcDataTuple = businessCentralService.fetchAllVerificationData(
@@ -327,8 +344,17 @@ public class JobDocumentVerificationService {
             } catch (Exception updateException) {
                 log.error("Failed to update BC fields for Job No: {} after successful verification: {}",
                         jobNo, updateException.getMessage(), updateException);
-                finalDiscrepancies.add("Warning: Verification passed, but failed to update Business Central status: " +
-                        updateException.getMessage());
+
+                // Check for specific Business Central error messages
+                String errorMessage = updateException.getMessage();
+                if (errorMessage != null && errorMessage.toLowerCase().contains("1st check date must have a value")) {
+                    finalDiscrepancies.add("Failed to update BC because job doesn't have first check date");
+                } else if (errorMessage != null && errorMessage.toLowerCase().contains("unauthorized")) {
+                    finalDiscrepancies.add("Failed to update BC due to authentication error");
+                } else {
+                    finalDiscrepancies.add("Warning: Verification passed, but failed to update Business Central status: " +
+                            errorMessage);
+                }
             }
         } else if (finalDiscrepancies.isEmpty() && !bcChecksPerformedOverall) {
             log.warn("Verification for Job No: {} resulted in no discrepancies, but not all Business Central checks were performed or completed. BC status not updated.", jobNo);
@@ -473,8 +499,8 @@ public class JobDocumentVerificationService {
                 if (!isNotFound(extractedSalesQuoteNo)) {
                     log.info("LLM extracted Sales Quote No: {} for Job No: {}", extractedSalesQuoteNo, jobNo);
                 } else {
-                    finalDiscrepancies.add("Sales Quote: Document number could not be extracted by LLM for Job No: " + jobNo);
-                    log.warn("Sales Quote: Document number could not be extracted by LLM for Job No: {}", jobNo);
+                    finalDiscrepancies.add("Cannot find Sales Quote Number from Sales Quote document");
+                    log.warn("Cannot find Sales Quote Number from Sales Quote document for Job No: {}", jobNo);
                 }
             } else {
                 finalDiscrepancies.add("Sales Quote document not found or is empty for Job No: " + jobNo);
@@ -509,8 +535,8 @@ public class JobDocumentVerificationService {
                 if (!isNotFound(extractedProformaInvoiceNo)) {
                     log.info("LLM extracted Proforma Invoice No: {} for Job No: {}", extractedProformaInvoiceNo, jobNo);
                 } else {
-                    finalDiscrepancies.add("Proforma Invoice: Document number could not be extracted by LLM for Job No: " + jobNo);
-                    log.warn("Proforma Invoice: Document number could not be extracted by LLM for Job No: {}", jobNo);
+                    finalDiscrepancies.add("Cannot find Tax Invoice Number from Proforma Invoice document - please check Proforma Invoice");
+                    log.warn("Cannot find Tax Invoice Number from Proforma Invoice document for Job No: {}", jobNo);
                 }
             } else {
                 finalDiscrepancies.add("Proforma Invoice document not found or is empty for Job No: " + jobNo);
@@ -652,7 +678,14 @@ public class JobDocumentVerificationService {
             }
         } else {
             log.warn("Skipping Business Central checks for Job No: {} due to missing document numbers.", jobNo);
-            finalDiscrepancies.add("Missing document numbers: Cannot perform Business Central verification without both Sales Quote and Proforma Invoice numbers.");
+
+            // Add specific error messages for missing identifiers
+            if (isNotFound(extractedSalesQuoteNo)) {
+                finalDiscrepancies.add("Cannot find Sales Quote Number from Sales Quote document");
+            }
+            if (isNotFound(extractedProformaInvoiceNo)) {
+                finalDiscrepancies.add("Cannot find Tax Invoice Number from Proforma Invoice document - please check Proforma Invoice");
+            }
         }
 
         // Final Result and BC Update
@@ -667,14 +700,44 @@ public class JobDocumentVerificationService {
             } catch (Exception updateException) {
                 log.error("Failed to update verification fields in BC for Job No: {} after successful verification: {}",
                         jobNo, updateException.getMessage(), updateException);
-                finalDiscrepancies.add("Warning: Verification passed, but failed to update Business Central status: " +
-                        updateException.getMessage());
+
+                // Check for specific Business Central error messages
+                String errorMessage = updateException.getMessage();
+                if (errorMessage != null && errorMessage.toLowerCase().contains("1st check date must have a value")) {
+                    finalDiscrepancies.add("Failed to update BC because job doesn't have first check date");
+                } else if (errorMessage != null && errorMessage.toLowerCase().contains("unauthorized")) {
+                    finalDiscrepancies.add("Failed to update BC due to authentication error");
+                } else {
+                    finalDiscrepancies.add("Warning: Verification passed, but failed to update Business Central status: " +
+                            errorMessage);
+                }
             }
         } else if (finalDiscrepancies.isEmpty() && !bcChecksPerformedOverall) {
             log.warn("Verification for Job No: {} resulted in no discrepancies, but not all Business Central checks were performed or completed. BC status not updated.", jobNo);
             finalDiscrepancies.add("Info: Document checks found no issues, but full Business Central validation was incomplete.");
         } else {
             log.warn("FAILURE: Document verification found discrepancies for Job No: {}. Count: {}", jobNo, finalDiscrepancies.size());
+
+            // Update Business Central with failure details
+            try {
+                String verificationComment = "Verification FAILED - " + String.join("; ", finalDiscrepancies);
+                businessCentralService.updateAllVerificationFields(jobNo, verificationComment, false).block();
+                log.info("Successfully updated BC with failure details for Job No: {}", jobNo);
+            } catch (Exception updateException) {
+                log.error("Failed to update BC with failure details for Job No: {}: {}",
+                        jobNo, updateException.getMessage(), updateException);
+
+                // Check for specific Business Central error messages
+                String errorMessage = updateException.getMessage();
+                if (errorMessage != null && errorMessage.toLowerCase().contains("1st check date must have a value")) {
+                    finalDiscrepancies.add("Failed to update BC because job doesn't have first check date");
+                } else if (errorMessage != null && errorMessage.toLowerCase().contains("unauthorized")) {
+                    finalDiscrepancies.add("Failed to update BC due to authentication error");
+                } else {
+                    finalDiscrepancies.add("Warning: Failed to update Business Central with verification results: " +
+                            errorMessage);
+                }
+            }
         }
 
         if (!finalDiscrepancies.isEmpty()) {
@@ -1407,14 +1470,56 @@ public class JobDocumentVerificationService {
             } catch (Exception updateException) {
                 log.error("Failed to update verification fields in BC for Job No: {} after successful verification: {}",
                         jobNo, updateException.getMessage(), updateException);
-                finalDiscrepancies.add("Warning: Verification passed, but failed to update Business Central status: " +
-                        updateException.getMessage());
+
+                // Check for specific Business Central error messages
+                String errorMessage = updateException.getMessage();
+                if (errorMessage != null && errorMessage.toLowerCase().contains("1st check date must have a value")) {
+                    finalDiscrepancies.add("Failed to update BC because job doesn't have first check date");
+                } else if (errorMessage != null && errorMessage.toLowerCase().contains("unauthorized")) {
+                    finalDiscrepancies.add("Failed to update BC due to authentication error");
+                } else {
+                    finalDiscrepancies.add("Warning: Verification passed, but failed to update Business Central status: " +
+                            errorMessage);
+                }
             }
         } else if (finalDiscrepancies.isEmpty() && !bcChecksPerformedOverall) {
             log.warn("Verification for Job No: {} resulted in no discrepancies, but not all Business Central checks were performed or completed. BC status not updated.", jobNo);
             finalDiscrepancies.add("Info: Document checks found no issues, but full Business Central validation was incomplete.");
         } else {
             log.warn("FAILURE: Document verification found discrepancies for Job No: {}. Count: {}", jobNo, finalDiscrepancies.size());
+
+            // Update Business Central with failure details
+            try {
+                String verificationComment = "Verification FAILED - " + String.join("; ", finalDiscrepancies);
+                log.info("Attempting to update BC with failure details for Job No: {}", jobNo);
+
+                try {
+                    // Try the Web Service first
+                    businessCentralWebService.updateAllVerificationFields(jobNo, verificationComment, false).block();
+                    log.info("Successfully updated BC with failure details using Web Service for Job No: {}", jobNo);
+                } catch (Exception webServiceException) {
+                    // If Web Service fails, fall back to the OData API
+                    log.warn("Web Service update failed for Job No: {}, falling back to OData API: {}",
+                            jobNo, webServiceException.getMessage());
+
+                    businessCentralService.updateAllVerificationFields(jobNo, verificationComment, false).block();
+                    log.info("Successfully updated BC with failure details using OData API for Job No: {}", jobNo);
+                }
+            } catch (Exception updateException) {
+                log.error("Failed to update BC with failure details for Job No: {}: {}",
+                        jobNo, updateException.getMessage(), updateException);
+
+                // Check for specific Business Central error messages
+                String errorMessage = updateException.getMessage();
+                if (errorMessage != null && errorMessage.toLowerCase().contains("1st check date must have a value")) {
+                    finalDiscrepancies.add("Failed to update BC because job doesn't have first check date");
+                } else if (errorMessage != null && errorMessage.toLowerCase().contains("unauthorized")) {
+                    finalDiscrepancies.add("Failed to update BC due to authentication error");
+                } else {
+                    finalDiscrepancies.add("Warning: Failed to update Business Central with verification results: " +
+                            errorMessage);
+                }
+            }
         }
 
         if (!finalDiscrepancies.isEmpty()) {

@@ -1,5 +1,6 @@
 package com.erp.aierpbackend.dto.dynamics;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
@@ -10,7 +11,8 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true) // Ignore fields not explicitly defined
 public class JobListDTO {
 
-    @JsonProperty("No")
+    @JsonProperty("no") // For serialization to frontend (lowercase)
+    @JsonAlias("No")   // For deserialization from BC (uppercase)
     private String no; // Job Number
 
     // Using the exact OData field names provided

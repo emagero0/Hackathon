@@ -7,13 +7,14 @@ import { JobDocuments } from "../components/jobs/job-documents";
 import { JobFeedback } from "../components/jobs/job-feedback";
 import { Button } from "../components/ui/button";
 import { ArrowLeft, Loader2, AlertTriangle, CheckCircle2, XCircle, FileCheck, FileWarning, FileX, Hourglass } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getJob, getLatestVerificationForJob } from "../lib/api"; // Import correct API functions
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { format, parseISO } from 'date-fns';
 import { Skeleton } from "../components/ui/skeleton";
+import { toast } from "sonner";
 
 // --- Interfaces --- (Should ideally be in a shared types file)
 
@@ -26,6 +27,8 @@ interface JobDetailData {
   customerName: string;
   status: 'PENDING' | 'PROCESSING' | 'VERIFIED' | 'FLAGGED' | 'ERROR'; // Overall Job status
   lastProcessedAt: string | null; // Allow null
+  verificationResult: string | null; // Verification result message
+  hasDiscrepancies: boolean | null; // Whether the verification found discrepancies
 }
 
 // Represents the data for the latest verification attempt
@@ -80,6 +83,91 @@ export default function JobDetail() {
   const [isLoadingVerification, setIsLoadingVerification] = useState(true);
   const [jobError, setJobError] = useState<string | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  // Removed polling-related state and refs
+
+  // Function to fetch the latest verification status
+  const fetchLatestVerification = async (jobNo: string) => {
+    if (!jobNo) return;
+
+    try {
+      setIsLoadingVerification(true);
+      // Add a cache-busting parameter to prevent browser caching
+      const timestamp = new Date().getTime();
+      const verificationData = await getLatestVerificationForJob(jobNo, timestamp);
+      console.log(`Fetched verification data for ${jobNo}:`, verificationData);
+
+      // Check if the data has changed before updating state
+      if (verificationData &&
+          (latestVerification?.status !== verificationData.status ||
+           latestVerification?.resultTimestamp !== verificationData.resultTimestamp ||
+           JSON.stringify(latestVerification?.discrepancies) !== JSON.stringify(verificationData.discrepancies))) {
+
+        setLatestVerification(verificationData);
+      }
+
+      return verificationData;
+    } catch (error) {
+      console.error("Error fetching latest verification:", error);
+      setVerificationError("Could not update verification status.");
+      return null;
+    } finally {
+      setIsLoadingVerification(false);
+    }
+  };
+
+  // Function to check for verification status updates with improved polling
+  const checkVerificationStatus = (jobNo: string) => {
+    if (!jobNo) return;
+
+    // Check for updates more frequently and for longer duration
+    let checkCount = 0;
+    const maxChecks = 30; // Check for 5 minutes (30 * 10 seconds)
+
+    const checkInterval = setInterval(async () => {
+      checkCount++;
+      console.log(`Checking verification status (${checkCount}/${maxChecks})...`);
+
+      try {
+        const verificationData = await getLatestVerificationForJob(jobNo);
+        if (verificationData) {
+          // Check if status has changed from PROCESSING
+          const previousStatus = latestVerification?.status;
+          setLatestVerification(verificationData);
+
+          // Show notification if status changed from PROCESSING to COMPLETED
+          if (previousStatus === 'PROCESSING' && verificationData.status === 'COMPLETED') {
+            if (verificationData.discrepancies && verificationData.discrepancies.length > 0) {
+              toast.warning("Verification completed with discrepancies", {
+                description: `Found ${verificationData.discrepancies.length} issues that need attention.`
+              });
+            } else {
+              toast.success("Verification completed successfully", {
+                description: "All document checks passed."
+              });
+            }
+          }
+
+          // Stop checking if status is no longer PROCESSING
+          if (verificationData.status !== 'PROCESSING') {
+            console.log(`Verification status changed to ${verificationData.status}, stopping polling`);
+            clearInterval(checkInterval);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error checking verification status:', error);
+      }
+
+      // Stop checking after maxChecks
+      if (checkCount >= maxChecks) {
+        console.log('Max polling attempts reached, stopping');
+        clearInterval(checkInterval);
+      }
+    }, 10000); // Check every 10 seconds
+
+    // Return a function to cancel the checks if needed
+    return () => clearInterval(checkInterval);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -113,6 +201,8 @@ export default function JobDetail() {
             customerName: jobDetailData.customerName,
             status: jobDetailData.status,
             lastProcessedAt: jobDetailData.lastProcessedAt || '', // Provide default empty string
+            verificationResult: jobDetailData.verificationResult || null,
+            hasDiscrepancies: jobDetailData.hasDiscrepancies || false,
         };
         setJobData(processedJobData);
 
@@ -122,6 +212,15 @@ export default function JobDetail() {
             const verificationData = await getLatestVerificationForJob(jobDetailData.businessCentralJobId);
              if (!isMounted) return;
             setLatestVerification(verificationData);
+            // Start checking for updates if verification is in PROCESSING state
+            if (verificationData && verificationData.status === 'PROCESSING') {
+              // Start checking for updates immediately
+              setTimeout(() => {
+                if (isMounted) {
+                  checkVerificationStatus(jobDetailData.businessCentralJobId);
+                }
+              }, 2000); // Reduced delay to 2 seconds
+            }
           } catch (verifErr) {
              if (!isMounted) return;
             // Don't set a blocking error, just log it or show a subtle warning
@@ -150,6 +249,8 @@ export default function JobDetail() {
       isMounted = false;
     };
   }, [id]);
+
+  // Removed polling-related effect
 
   // --- Render Logic ---
 
@@ -269,6 +370,7 @@ export default function JobDetail() {
                     {getVerificationStatusIcon(latestVerification.status)}
                     {latestVerification.status}
                   </Badge>
+                  {/* Removed polling indicator */}
                 </div>
                 {/* Timestamps */}
                  <div className="text-sm text-muted-foreground">

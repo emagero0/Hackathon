@@ -51,7 +51,10 @@ export const triggerVerification = async (jobNo: string): Promise<TriggerRespons
 
 // Define the type for a job pending second check (matching the backend JobListDTO)
 export interface JobPendingSecondCheck {
-  no: string;
+  no: string;    // Primary field (backend now uses @JsonProperty("no"))
+  No?: string;   // Fallback for compatibility
+  jobNo?: string;
+  JobNo?: string;
   firstCheckDate: string;
   secondCheckBy: string;
   description: string;
@@ -66,15 +69,21 @@ export const fetchJobsPendingSecondCheck = async (): Promise<JobPendingSecondChe
   try {
     const response = await axios.get<JobPendingSecondCheck[]>(`${API_BASE_URL}/verifications/jobs-pending-second-check`);
     console.log('Raw response from jobs-pending-second-check:', response);
+    console.log('Raw response data:', JSON.stringify(response.data, null, 2));
 
     // Ensure we have an array of jobs with proper job numbers
     const jobs = response.data.map(job => {
-      // Make sure job.no is a string
-      if (job.no === undefined || job.no === null) {
-        console.error('Job has no "no" property:', job);
+      console.log('Processing individual job:', JSON.stringify(job, null, 2));
+
+      // Check for different possible field names (should be "no" now with JsonAlias)
+      let jobNo = job.no || job.No || job.jobNo || job.JobNo;
+
+      if (jobNo === undefined || jobNo === null) {
+        console.error('Job has no job number property. Available properties:', Object.keys(job));
         return { ...job, no: 'Unknown' };
       }
-      return { ...job, no: String(job.no).trim() };
+
+      return { ...job, no: String(jobNo).trim() };
     });
 
     console.log('Processed jobs from backend:', jobs);

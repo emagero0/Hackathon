@@ -230,6 +230,64 @@ async def extract_identifiers_from_gemini(
     return schemas.IdentifierExtractionResponse(extracted_identifiers={}, error_message=error_message)
 
 
+def _create_missing_identifier_error(document_type: str, missing_identifiers: list) -> str:
+    """
+    Creates user-friendly error messages for missing identifiers based on document type.
+    """
+    error_messages = []
+
+    for identifier in missing_identifiers:
+        if document_type.lower() == "salesquote":
+            if "sales_quote_number" in identifier.lower() or "quote" in identifier.lower():
+                error_messages.append("Cannot find Sales Quote Number from Sales Quote document")
+        elif document_type.lower() == "proformainvoice":
+            if "tax_invoice_number" in identifier.lower() or "invoice" in identifier.lower():
+                error_messages.append("Cannot find Tax Invoice Number from Proforma Invoice document - please check Proforma Invoice")
+        elif document_type.lower() == "jobconsumption":
+            if "job_number" in identifier.lower() or "job" in identifier.lower():
+                error_messages.append("Cannot find Job Number from Job Consumption document")
+        else:
+            # Generic message for unknown document types
+            error_messages.append(f"Cannot find required identifier {identifier} from {document_type} document")
+
+    return "; ".join(error_messages) if error_messages else f"Missing required identifiers from {document_type} document"
+
+
+def _validate_extracted_identifiers(document_type: str, extracted_identifiers: dict) -> tuple[bool, str]:
+    """
+    Validates that required identifiers were extracted based on document type.
+    Returns (is_valid, error_message).
+    """
+    required_identifiers = {
+        "salesquote": ["sales_quote_number", "salesQuoteNo"],
+        "proformainvoice": ["tax_invoice_number", "taxInvoiceNo"],
+        "jobconsumption": ["job_number", "jobNo"]
+    }
+
+    doc_type_lower = document_type.lower()
+    if doc_type_lower not in required_identifiers:
+        return True, ""  # Unknown document type, skip validation
+
+    required_fields = required_identifiers[doc_type_lower]
+    missing_identifiers = []
+
+    # Check if any of the required identifiers are present
+    found_any = False
+    for field in required_fields:
+        if field in extracted_identifiers and extracted_identifiers[field]:
+            found_any = True
+            break
+
+    if not found_any:
+        missing_identifiers.extend(required_fields)
+
+    if missing_identifiers:
+        error_message = _create_missing_identifier_error(document_type, missing_identifiers)
+        return False, error_message
+
+    return True, ""
+
+
 # Helper functions for building document-specific prompts
 def _build_sales_quote_prompt(job_no: str, erp_data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -983,6 +1041,27 @@ async def classify_and_verify_with_gemini(
                                 verified=False
                             ))
 
+                # Validate extracted identifiers for business logic errors
+                if is_initial_classification and document_type != "UNKNOWN":
+                    # Convert field_confidences to a dictionary for validation
+                    extracted_identifiers = {}
+                    for field in field_confidences:
+                        if field.extracted_value:
+                            extracted_identifiers[field.field_name] = field.extracted_value
+
+                    # Validate that required identifiers were extracted
+                    is_valid, validation_error = _validate_extracted_identifiers(document_type, extracted_identifiers)
+                    if not is_valid:
+                        # Return business logic error for missing identifiers
+                        return schemas.ClassifyAndVerifyResponse(
+                            document_type=document_type,
+                            classification_confidence=0.5,
+                            classification_reasoning="Document classified but missing required identifiers",
+                            field_confidences=field_confidences,
+                            error_message=validation_error,
+                            raw_llm_response=raw_response_text
+                        )
+
                 # Create a basic response with the extracted document type and any extracted fields
                 return schemas.ClassifyAndVerifyResponse(
                     document_type=document_type,
@@ -1210,11 +1289,11 @@ Check:
 
 Expected format examples (actual content may vary):
     Description: "PEDROLLO PKm60 0.37kW PUMP"
-    Quantity: 3 (Sales Quote), 5 (Proforma and Job Consumption)
+    Quantity: Must be identical across all documents (e.g., 5 in Sales Quote, 5 in Proforma Invoice, 5 in Job Consumption)
 
 Validation Rule:
     All documents must reference identical item descriptions.
-    Quantities should match across documents unless context implies partial delivery (e.g. Sales Quote may differ if less was quoted than invoiced or shipped).
+    Quantities must match exactly across all documents.
 
 Fail Condition:
 If item descriptions or quantities do not structurally and semantically match:
@@ -1229,10 +1308,10 @@ Check:
 
 Example format:
     Sales Quote: Total KES 22,200.00
-    Proforma Invoice: Total KES 37,001.00
+    Proforma Invoice: Total KES 22,200.00
 
 Validation Rule:
-    The totals must match precisely unless a documented adjustment (e.g. quantity change, tax adjustment) is present and explainable.
+    The totals must match precisely between Sales Quote and Proforma Invoice.
 
 Fail Condition:
 ❌ Validation Error: Total KES mismatch between Sales Quote and Proforma Invoice.

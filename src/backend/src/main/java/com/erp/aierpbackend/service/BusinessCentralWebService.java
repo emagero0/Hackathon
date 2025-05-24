@@ -53,31 +53,32 @@ public class BusinessCentralWebService {
     }
 
     /**
-     * Updates all verification fields for a job using the Business Central Web Services API.
-     * This method uses the SOAP or REST endpoint to update the fields without requiring an ETag.
+     * Updates verification fields for a job using the Business Central Web Services API.
+     * For successful verification, updates both date and comment. For failed verification, updates only comment.
      *
      * @param jobNo The job number
      * @param comment The verification comment
+     * @param isSuccess Whether the verification was successful (updates date) or failed (only updates comment)
      * @return A Mono indicating completion or error
      */
-    public Mono<Void> updateAllVerificationFields(String jobNo, String comment) {
-        log.info("Updating all verification fields via Web Services for Job No: {}", jobNo);
+    public Mono<Void> updateAllVerificationFields(String jobNo, String comment, boolean isSuccess) {
+        if (isSuccess) {
+            log.info("Updating second check date field and verification comment via Web Services for successful verification, Job No: {}", jobNo);
+        } else {
+            log.info("Updating only verification comment via Web Services for failed verification, Job No: {}", jobNo);
+        }
 
-        // Get current date and time
+        // Get current date and time (only used for successful verifications)
         LocalDate currentDate = LocalDate.now();
         String formattedDate = currentDate.format(DateTimeFormatter.ISO_LOCAL_DATE); // Format as YYYY-MM-DD
 
-        // Get current time
-        java.time.LocalTime currentTime = java.time.LocalTime.now();
-        String formattedTime = currentTime.format(DateTimeFormatter.ofPattern("HH:mm:ss")); // Format as HH:MM:SS
-
-        // Create request body
+        // Create request body based on success/failure
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("jobNo", jobNo);
-        requestBody.put("checkDate", formattedDate);
-        requestBody.put("checkBy", "AI LLM Service");
-        requestBody.put("checkTime", formattedTime);
         requestBody.put("comment", comment);
+        if (isSuccess) {
+            requestBody.put("checkDate", formattedDate);
+        }
 
         // Call the Web Service endpoint
         // Using the standard OData endpoint but with a different HTTP method
@@ -98,12 +99,23 @@ public class BusinessCentralWebService {
                         })
                 )
                 .toBodilessEntity()
-                .doOnSuccess(response -> log.info("Successfully updated verification fields via Web Service for Job No: {}", jobNo))
+                .doOnSuccess(response -> log.info("Successfully updated second check date field via Web Service for Job No: {}", jobNo))
                 .then()
                 .onErrorResume(error -> {
-                    log.error("Error updating verification fields via Web Service for Job No: {}", jobNo, error);
-                    return Mono.error(new RuntimeException("Failed to update verification fields via Web Service for " + jobNo, error));
+                    log.error("Error updating second check date field via Web Service for Job No: {}", jobNo, error);
+                    return Mono.error(new RuntimeException("Failed to update second check date field via Web Service for " + jobNo, error));
                 });
+    }
+
+    /**
+     * Backward compatibility method that assumes successful verification (updates both date and comment).
+     *
+     * @param jobNo The job number
+     * @param comment The verification comment
+     * @return A Mono indicating completion or error
+     */
+    public Mono<Void> updateAllVerificationFields(String jobNo, String comment) {
+        return updateAllVerificationFields(jobNo, comment, true); // Default to success (updates both fields)
     }
 
     /**

@@ -28,13 +28,13 @@ export interface JwtResponse {
 export const login = async (loginRequest: LoginRequest): Promise<JwtResponse> => {
   try {
     const response = await axios.post(`${API_BASE_URL}/auth/signin`, loginRequest);
-    
+
     // Store JWT token in localStorage
     if (response.data.token) {
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('userRole', response.data.roles[0]); // Store the first role
     }
-    
+
     return response.data;
   } catch (error) {
     console.error('Login error:', error);
@@ -77,9 +77,31 @@ export const getCurrentUser = (): JwtResponse | null => {
   return null;
 };
 
-// Check if user is authenticated
+// Check if user is authenticated and token is not expired
 export const isAuthenticated = (): boolean => {
-  return localStorage.getItem('token') !== null;
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return false;
+  }
+
+  try {
+    // Decode JWT token to check expiration (basic check without verification)
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const currentTime = Date.now() / 1000;
+
+    // Check if token is expired
+    if (payload.exp && payload.exp < currentTime) {
+      // Token is expired, remove it
+      logout();
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    // If token is malformed, consider it invalid
+    logout();
+    return false;
+  }
 };
 
 // Setup axios interceptor for authentication
@@ -96,7 +118,7 @@ export const setupAxiosInterceptors = (): void => {
       return Promise.reject(error);
     }
   );
-  
+
   // Add a response interceptor to handle token expiration
   axios.interceptors.response.use(
     (response) => response,

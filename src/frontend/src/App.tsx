@@ -1,4 +1,4 @@
-"use client"
+import './App.css'
 
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom"
 import { useState, useEffect } from "react"
@@ -26,21 +26,31 @@ interface User {
 }
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [userRole, setUserRole] = useState<string | null>(null)
+  // Initialize authentication state immediately from localStorage to prevent redirect issues
+  const [isAuthenticated, setIsAuthenticated] = useState(() => checkAuthentication())
+  const [userRole, setUserRole] = useState<string | null>(() => {
+    const user = getCurrentUser();
+    return user && user.roles.length > 0 ? user.roles[0] : null;
+  })
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     // Setup axios interceptors for authentication
     setupAxiosInterceptors();
 
-    // Check if user is authenticated
-    if (checkAuthentication()) {
-      setIsAuthenticated(true);
+    // Double-check authentication state
+    const authStatus = checkAuthentication();
+    setIsAuthenticated(authStatus);
+    
+    if (authStatus) {
       const user = getCurrentUser();
       if (user && user.roles.length > 0) {
         setUserRole(user.roles[0]);
       }
     }
+    
+    // Set loading to false after authentication check
+    setIsLoading(false);
   }, [])
 
   const handleLogin = (user: User) => {
@@ -57,6 +67,15 @@ function App() {
       setIsAuthenticated(false);
       setUserRole(null);
     });
+  }
+
+  // Show loading spinner while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    );
   }
 
   return (

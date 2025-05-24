@@ -462,7 +462,7 @@ public class DocumentProcessingOrchestratorService {
     }
 
     /**
-     * Handles errors during document processing.
+     * Handles errors during document processing with enhanced error classification.
      *
      * @param verificationRequestId The verification request ID
      * @param jobNo The job number
@@ -474,9 +474,26 @@ public class DocumentProcessingOrchestratorService {
             Job job = jobRepository.findByBusinessCentralJobId(jobNo).orElse(null);
 
             if (request != null && job != null) {
-                String errorMsg = "Error during document processing: " + e.getMessage();
-                updateRequestAndJobStatus(request, job, VerificationRequest.VerificationStatus.FAILED,
-                        Job.JobStatus.ERROR, List.of(errorMsg), e.getMessage());
+                // Check if this is a business logic error (missing identifiers) or system error
+                if (e instanceof SystemErrorHandler.BusinessLogicErrorException) {
+                    // Business logic error - show to user
+                    String businessErrorMsg = e.getMessage();
+                    log.info("Business logic error for Job No: {}: {}", jobNo, businessErrorMsg);
+                    updateRequestAndJobStatus(request, job, VerificationRequest.VerificationStatus.FAILED,
+                            Job.JobStatus.FLAGGED, List.of(businessErrorMsg), businessErrorMsg);
+                } else if (e instanceof SystemErrorHandler.SystemErrorException) {
+                    // System error - don't show details to user, retry will be handled by SystemErrorHandler
+                    log.error("System error for Job No: {}: {}", jobNo, e.getMessage());
+                    updateRequestAndJobStatus(request, job, VerificationRequest.VerificationStatus.FAILED,
+                            Job.JobStatus.ERROR, List.of("System temporarily unavailable - processing will retry automatically"),
+                            "System error: " + e.getMessage());
+                } else {
+                    // Unknown error type - treat as system error
+                    String errorMsg = "Error during document processing: " + e.getMessage();
+                    log.error("Unknown error type for Job No: {}: {}", jobNo, e.getMessage(), e);
+                    updateRequestAndJobStatus(request, job, VerificationRequest.VerificationStatus.FAILED,
+                            Job.JobStatus.ERROR, List.of(errorMsg), e.getMessage());
+                }
             }
         } catch (Exception ex) {
             log.error("Error handling processing error for Job No: {}: {}", jobNo, ex.getMessage(), ex);
@@ -491,6 +508,9 @@ public class DocumentProcessingOrchestratorService {
                                        VerificationRequest.VerificationStatus requestStatus, Job.JobStatus jobStatus,
                                        List<String> discrepancies, String activityLogReason) {
         try {
+            log.info("Updating verification request status to {} and job status to {} for Job No: {}",
+                    requestStatus, jobStatus, request.getJobNo());
+
             request.setStatus(requestStatus);
             request.setResultTimestamp(LocalDateTime.now());
             request.setDiscrepanciesJson(serializeDiscrepancies(discrepancies));
@@ -499,11 +519,28 @@ public class DocumentProcessingOrchestratorService {
             String activityLogEvent = ActivityLogService.EVENT_JOB_PROCESSED; // Default
             Long jobIdForLog = null;
 
+            // Store the verification result in the Job entity
+            if (job != null && (requestStatus == VerificationRequest.VerificationStatus.COMPLETED ||
+                               requestStatus == VerificationRequest.VerificationStatus.FAILED)) {
+                // Store the verification result
+                job.setVerificationResult(activityLogReason);
+
+                // Set hasDiscrepancies flag
+                if (discrepancies != null && !discrepancies.isEmpty()) {
+                    job.setHasDiscrepancies(true);
+                } else {
+                    job.setHasDiscrepancies(false);
+                }
+            }
+
             if (job != null && jobStatus != null) {
                 job.setStatus(jobStatus);
                 job.setLastProcessedAt(LocalDateTime.now());
                 jobRepository.save(job);
                 jobIdForLog = job.getId(); // Use job ID if available
+
+                log.info("Successfully updated Job No: {} to status: {} at {}",
+                        request.getJobNo(), jobStatus, LocalDateTime.now());
             }
 
             // Determine Activity Log event type based on status

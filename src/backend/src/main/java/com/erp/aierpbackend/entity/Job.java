@@ -36,12 +36,11 @@ public class Job {
     @Column(name = "last_processed_at")
     private LocalDateTime lastProcessedAt;
 
-    // Removed VerificationResult field as it's now decoupled
-    // @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
-    // @JoinColumn(name = "verification_result_id", referencedColumnName = "id") // Foreign key in jobs table
-    // private VerificationResult verificationResult;
+    @Column(name = "verification_result", columnDefinition = "TEXT")
+    private String verificationResult;
 
-    // Removed setVerificationResult helper method
+    @Column(name = "has_discrepancies")
+    private Boolean hasDiscrepancies = false;
 
     public enum JobStatus {
         PENDING,    // Initial state or awaiting processing

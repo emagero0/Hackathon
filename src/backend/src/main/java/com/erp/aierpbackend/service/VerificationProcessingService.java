@@ -17,6 +17,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @Slf4j
@@ -101,14 +102,16 @@ public class VerificationProcessingService {
                 public void afterCommit() {
                     log.info("Transaction committed before document processing for Job No: {}", jobNo);
 
-                    // Start document processing in a new transaction using the orchestrator service
-                    try {
-                        documentProcessingOrchestratorService.orchestrateDocumentProcessing(verificationRequestId, jobNo);
-                        log.info("Successfully triggered document processing orchestrator for Job No: {}", jobNo);
-                    } catch (Exception e) {
-                        log.error("Failed to trigger document processing orchestrator for Job No: {}: {}",
-                                jobNo, e.getMessage(), e);
-                    }
+                    // Start document processing in a new thread to avoid transaction context issues
+                    CompletableFuture.runAsync(() -> {
+                        try {
+                            documentProcessingOrchestratorService.orchestrateDocumentProcessing(verificationRequestId, jobNo);
+                            log.info("Successfully triggered document processing orchestrator for Job No: {}", jobNo);
+                        } catch (Exception e) {
+                            log.error("Failed to trigger document processing orchestrator for Job No: {}: {}",
+                                    jobNo, e.getMessage(), e);
+                        }
+                    });
                 }
 
                 @Override
@@ -144,6 +147,20 @@ public class VerificationProcessingService {
 
             String activityLogEvent = ActivityLogService.EVENT_JOB_PROCESSED; // Default
             Long jobIdForLog = null;
+
+            // Store the verification result in the Job entity
+            if (job != null && (requestStatus == VerificationRequest.VerificationStatus.COMPLETED ||
+                               requestStatus == VerificationRequest.VerificationStatus.FAILED)) {
+                // Store the verification result
+                job.setVerificationResult(activityLogReason);
+
+                // Set hasDiscrepancies flag
+                if (discrepancies != null && !discrepancies.isEmpty()) {
+                    job.setHasDiscrepancies(true);
+                } else {
+                    job.setHasDiscrepancies(false);
+                }
+            }
 
             if (job != null && jobStatus != null) {
                 job.setStatus(jobStatus);

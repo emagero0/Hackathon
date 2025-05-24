@@ -34,6 +34,7 @@ public class BusinessCentralService {
     private final WebClient webClient;
     private final String oDataBaseUrl;
     private final String basicAuthHeader;
+    private final SystemErrorHandler systemErrorHandler;
 
     // Define the generic type reference for list responses
     private static final ParameterizedTypeReference<ODataListResponseWrapper<JobLedgerEntryDTO>> JOB_LEDGER_LIST_TYPE =
@@ -55,11 +56,13 @@ public class BusinessCentralService {
 
     public BusinessCentralService(
             WebClient.Builder webClientBuilder,
+            SystemErrorHandler systemErrorHandler,
             @Value("${dynamics.bc.odata.base-url}") String oDataBaseUrl,
             @Value("${dynamics.bc.odata.username}") String username,
             @Value("${dynamics.bc.odata.key}") String key) {
         this.oDataBaseUrl = oDataBaseUrl;
         this.webClient = webClientBuilder.baseUrl(oDataBaseUrl).build();
+        this.systemErrorHandler = systemErrorHandler;
 
         // Prepare Basic Authentication header
         String auth = username + ":" + key;
@@ -595,17 +598,22 @@ public class BusinessCentralService {
     }
 
     /**
-     * Updates all verification-related fields on the Job_Card entity in Business Central.
-     * This method updates the 2nd Check Date, 2nd Check By, 2nd Check Time, and Verification Comment fields.
+     * Updates the 2nd Check Date field and Verification Comment on the Job_Card entity in Business Central.
+     * This method updates both the date field and the verification comment based on verification results.
      *
      * @param jobNo The Job_No of the job to update.
-     * @param comment The verification comment to set.
+     * @param comment The verification comment (success message or discrepancies).
+     * @param isSuccess Whether the verification was successful (updates date) or failed (only updates comment).
      * @return A Mono indicating completion or error.
      */
-    public Mono<Void> updateAllVerificationFields(String jobNo, String comment) {
-        log.info("Updating all verification fields for Job No: {}", jobNo);
+    public Mono<Void> updateAllVerificationFields(String jobNo, String comment, boolean isSuccess) {
+        if (isSuccess) {
+            log.info("Updating second check date field and verification comment for successful verification, Job No: {}", jobNo);
+        } else {
+            log.info("Updating only verification comment for failed verification, Job No: {}", jobNo);
+        }
 
-        // Get current date and time
+        // Get current date and time (only used for successful verifications)
         LocalDate currentDate = LocalDate.now();
         String formattedDate = currentDate.format(DateTimeFormatter.ISO_LOCAL_DATE); // Format as YYYY-MM-DD
 
@@ -638,15 +646,17 @@ public class BusinessCentralService {
 
                     log.info("Successfully extracted ETag from response body for Job No: {}: {}", jobNo, etag);
 
-                    // Create a map with all fields to update in a single PATCH request
+                    // Create a map with the appropriate fields based on success/failure
                     Map<String, String> requestBody = new HashMap<>();
-                    requestBody.put("_x0032_nd_Check_Date", formattedDate);
-                    requestBody.put("_x0032_nd_Check_Time", formattedTime);
-                    requestBody.put("_x0032_nd_Check_By", "AI LLM Service");
-
-                    // Add comment if provided
-                    if (comment != null && !comment.isEmpty()) {
+                    if (isSuccess) {
+                        // For successful verification, update both date and comment
+                        requestBody.put("_x0032_nd_Check_Date", formattedDate);
                         requestBody.put("Verification_Comment", comment);
+                        log.info("Updating Job No: {} with date: {} and comment: {}", jobNo, formattedDate, comment);
+                    } else {
+                        // For failed verification, update only comment
+                        requestBody.put("Verification_Comment", comment);
+                        log.info("Updating Job No: {} with comment only: {}", jobNo, comment);
                     }
 
                     // Perform a single PATCH request with all fields
@@ -664,7 +674,7 @@ public class BusinessCentralService {
                                 handleError(response, "Error updating Job_Card for Job No: " + jobNo)
                             )
                             .toBodilessEntity()
-                            .doOnSuccess(response -> log.info("Successfully updated all verification fields for Job No: {}. Status code: {}",
+                            .doOnSuccess(response -> log.info("Successfully updated second check date field for Job No: {}. Status code: {}",
                                 jobNo, response.getStatusCode()))
                             .then(); // Convert to Mono<Void>
                 })
@@ -677,44 +687,59 @@ public class BusinessCentralService {
                             .onErrorResume(directError -> {
                                 log.warn("Direct update also failed, falling back to individual field updates for Job No: {}", jobNo);
 
-                                // Try updating each field individually in sequence
-                                return updateJobCardField(jobNo, "_x0032_nd_Check_Date", formattedDate)
-                                        .then(updateJobCardField(jobNo, "_x0032_nd_Check_By", "AI LLM Service"))
-                                        .then(updateJobCardField(jobNo, "_x0032_nd_Check_Time", formattedTime))
-                                        .then(updateJobCardField(jobNo, "Verification_Comment", comment))
-                                        .doOnSuccess(v -> log.info("Successfully updated all verification fields using fallback method for Job No: {}", jobNo))
-                                        .onErrorResume(fallbackError -> {
-                                            log.error("All update methods failed for Job No: {}", jobNo, fallbackError);
-                                            return Mono.error(new RuntimeException("Failed to update verification fields for job " + jobNo, fallbackError));
-                                        });
+                                // Try to update fields individually based on success/failure
+                                Mono<Void> individualUpdate;
+                                if (isSuccess) {
+                                    // For successful verification, update both fields
+                                    individualUpdate = updateJobCardField(jobNo, "_x0032_nd_Check_Date", formattedDate)
+                                            .then(updateJobCardField(jobNo, "Verification_Comment", comment))
+                                            .doOnSuccess(v -> log.info("Successfully updated both fields using individual fallback method for Job No: {}", jobNo));
+                                } else {
+                                    // For failed verification, update only comment
+                                    individualUpdate = updateJobCardField(jobNo, "Verification_Comment", comment)
+                                            .doOnSuccess(v -> log.info("Successfully updated comment field using individual fallback method for Job No: {}", jobNo));
+                                }
+
+                                return individualUpdate.onErrorResume(fallbackError -> {
+                                    log.error("All update methods failed for Job No: {}", jobNo, fallbackError);
+                                    return Mono.error(new RuntimeException("Failed to update verification fields for job " + jobNo, fallbackError));
+                                });
                             });
                 });
     }
 
     /**
-     * Updates all verification fields directly using a custom Business Central function.
+     * Backward compatibility method that assumes successful verification (updates both date and comment).
+     *
+     * @param jobNo The Job_No of the job to update.
+     * @param comment The verification comment.
+     * @return A Mono indicating completion or error.
+     */
+    public Mono<Void> updateAllVerificationFields(String jobNo, String comment) {
+        return updateAllVerificationFields(jobNo, comment, true); // Default to success (updates both fields)
+    }
+
+    /**
+     * Updates only the second check date field directly using a custom Business Central function.
      * This method is designed to bypass the ETag requirement by using a custom endpoint.
      *
      * @param jobNo The job number
      * @param checkDate The check date in ISO format (YYYY-MM-DD)
-     * @param checkBy The name of the checker
-     * @param checkTime The check time in format HH:MM:SS
-     * @param comment The verification comment
+     * @param checkBy Not used anymore (kept for backward compatibility)
+     * @param checkTime Not used anymore (kept for backward compatibility)
+     * @param comment Not used anymore (kept for backward compatibility)
      * @return A Mono indicating completion or error
      */
     private Mono<Void> updateJobVerificationFieldsDirectly(String jobNo, String checkDate, String checkBy, String checkTime, String comment) {
-        log.info("Directly updating verification fields for Job No: {}", jobNo);
+        log.info("Directly updating second check date field for Job No: {}", jobNo);
 
-        // Create a request body with all the fields
+        // Create a request body with only the second check date field
         String requestBody = String.format(
             "{"
             + "\"jobNo\": \"%s\","
-            + "\"checkDate\": \"%s\","
-            + "\"checkBy\": \"%s\","
-            + "\"checkTime\": \"%s\","
-            + "\"comment\": \"%s\""
+            + "\"checkDate\": \"%s\""
             + "}",
-            jobNo, checkDate, checkBy, checkTime, comment
+            jobNo, checkDate
         );
 
         // Use a custom endpoint that doesn't require ETag
@@ -734,7 +759,7 @@ public class BusinessCentralService {
                     handleError(response, "Error directly updating verification fields for Job No: " + jobNo)
                 )
                 .toBodilessEntity()
-                .doOnSuccess(response -> log.info("Successfully directly updated verification fields for Job No: {}, Status code: {}",
+                .doOnSuccess(response -> log.info("Successfully directly updated second check date field for Job No: {}, Status code: {}",
                     jobNo, response.getStatusCode()))
                 .then() // Convert to Mono<Void>
                 .doOnError(error -> {

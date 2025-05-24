@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
-import { fetchJobsPendingSecondCheck, JobPendingSecondCheck } from '@/services/verificationService';
+import { fetchJobsPendingSecondCheck, JobPendingSecondCheck, triggerVerification } from '@/services/verificationService';
 
 interface Job {
   jobNo: string;
@@ -24,6 +24,12 @@ export function JobVerificationManager() {
   const [fetchInterval, setFetchInterval] = useState<number>(5);
   const [isFetching, setIsFetching] = useState<boolean>(false);
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-processing states
+  const [autoProcess, setAutoProcess] = useState<boolean>(false);
+  const [processInterval, setProcessInterval] = useState<number>(10);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const processIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleAddToVerification = (jobNo: string) => {
     console.log('handleAddToVerification called with jobNo:', jobNo);
@@ -142,6 +148,78 @@ export function JobVerificationManager() {
     }
   };
 
+  const processJobsAutomatically = async () => {
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+    try {
+      // Get jobs that are pending verification
+      const pendingJobs = jobs.filter(job => job.status === 'pending');
+
+      if (pendingJobs.length === 0) {
+        console.log('No pending jobs to process');
+        return;
+      }
+
+      console.log(`Auto-processing ${pendingJobs.length} pending jobs`);
+
+      // Process jobs one by one to avoid overwhelming the system
+      for (const job of pendingJobs) {
+        try {
+          console.log(`Auto-processing job: ${job.jobNo}`);
+
+          // Update job status to in_progress
+          setJobs(prevJobs =>
+            prevJobs.map(j =>
+              j.jobNo === job.jobNo
+                ? { ...j, status: 'in_progress' as const }
+                : j
+            )
+          );
+
+          // Trigger verification
+          await triggerVerification(job.jobNo);
+
+          // Update job status to completed (will be updated by polling later)
+          setJobs(prevJobs =>
+            prevJobs.map(j =>
+              j.jobNo === job.jobNo
+                ? { ...j, status: 'completed' as const }
+                : j
+            )
+          );
+
+          toast.success(`Started verification for job ${job.jobNo}`);
+
+          // Add a small delay between jobs to avoid overwhelming the system
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+        } catch (error) {
+          console.error(`Error processing job ${job.jobNo}:`, error);
+
+          // Update job status to failed
+          setJobs(prevJobs =>
+            prevJobs.map(j =>
+              j.jobNo === job.jobNo
+                ? { ...j, status: 'failed' as const }
+                : j
+            )
+          );
+
+          toast.error(`Failed to process job ${job.jobNo}`);
+        }
+      }
+
+      toast.success(`Auto-processing completed for ${pendingJobs.length} jobs`);
+
+    } catch (error) {
+      console.error('Error in auto-processing:', error);
+      toast.error("Auto-processing failed");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const toggleAutoFetch = (checked: boolean) => {
     setAutoFetch(checked);
 
@@ -151,6 +229,18 @@ export function JobVerificationManager() {
     if (!checked && intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+    }
+  };
+
+  const toggleAutoProcess = (checked: boolean) => {
+    setAutoProcess(checked);
+
+    // Save setting to localStorage
+    localStorage.setItem('autoProcessEnabled', checked.toString());
+
+    if (!checked && processIntervalRef.current) {
+      clearInterval(processIntervalRef.current);
+      processIntervalRef.current = null;
     }
   };
 
@@ -164,6 +254,20 @@ export function JobVerificationManager() {
       if (autoFetch && intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = setInterval(fetchPendingJobs, interval * 60 * 1000);
+      }
+    }
+  };
+
+  const handleProcessIntervalChange = (value: string) => {
+    const interval = parseInt(value);
+    if (!isNaN(interval) && interval > 0) {
+      setProcessInterval(interval);
+      localStorage.setItem('processInterval', interval.toString());
+
+      // Restart interval if auto-process is enabled
+      if (autoProcess && processIntervalRef.current) {
+        clearInterval(processIntervalRef.current);
+        processIntervalRef.current = setInterval(processJobsAutomatically, interval * 60 * 1000);
       }
     }
   };
@@ -197,6 +301,20 @@ export function JobVerificationManager() {
         setFetchInterval(interval);
       }
     }
+
+    // Load auto-process settings
+    const savedAutoProcess = localStorage.getItem('autoProcessEnabled');
+    if (savedAutoProcess) {
+      setAutoProcess(savedAutoProcess === 'true');
+    }
+
+    const savedProcessInterval = localStorage.getItem('processInterval');
+    if (savedProcessInterval) {
+      const interval = parseInt(savedProcessInterval);
+      if (!isNaN(interval) && interval > 0) {
+        setProcessInterval(interval);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -217,6 +335,20 @@ export function JobVerificationManager() {
       }
     };
   }, [autoFetch, fetchInterval]);
+
+  useEffect(() => {
+    // Set up interval for auto-processing
+    if (autoProcess) {
+      processJobsAutomatically(); // Process immediately when enabled
+      processIntervalRef.current = setInterval(processJobsAutomatically, processInterval * 60 * 1000);
+    }
+
+    return () => {
+      if (processIntervalRef.current) {
+        clearInterval(processIntervalRef.current);
+      }
+    };
+  }, [autoProcess, processInterval, jobs]); // Include jobs dependency to react to changes
 
   return (
     <div className="space-y-8">
@@ -279,6 +411,60 @@ export function JobVerificationManager() {
               value={fetchInterval}
               onChange={(e) => handleIntervalChange(e.target.value)}
               disabled={!autoFetch}
+              min={1}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Job Processing Settings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={processJobsAutomatically}
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Process Pending Jobs Now"
+                  )}
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                Trigger verification for all pending jobs in the list
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="autoProcess">Auto-Process Jobs</Label>
+              <div className="text-sm text-muted-foreground">Automatically process pending jobs at regular intervals</div>
+            </div>
+            <Switch
+              id="autoProcess"
+              checked={autoProcess}
+              onCheckedChange={toggleAutoProcess}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="processInterval">Processing Interval (minutes)</Label>
+            <Input
+              id="processInterval"
+              type="number"
+              value={processInterval}
+              onChange={(e) => handleProcessIntervalChange(e.target.value)}
+              disabled={!autoProcess}
               min={1}
             />
           </div>

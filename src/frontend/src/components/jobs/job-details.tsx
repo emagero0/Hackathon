@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card"
 import { Badge } from "../../components/ui/badge"
-import { AlertTriangle, CheckCircle, Clock } from "lucide-react"
+import { Alert, AlertTitle, AlertDescription } from "../../components/ui/alert"
+import { AlertTriangle, CheckCircle, Clock, CheckCircle2 } from "lucide-react"
 import { format } from 'date-fns' // Added import
 
 // Re-define interface for JobDetailData (matching parent component)
@@ -27,7 +28,8 @@ interface JobDetailData {
   customerName: string;
   status: 'PENDING' | 'PROCESSING' | 'VERIFIED' | 'FLAGGED' | 'ERROR';
   lastProcessedAt: string | null; // Allow null
-  // verificationDetails: VerificationDetailsDTO | null; // Removed - This component doesn't display verification details directly
+  verificationResult: string | null; // Verification result message
+  hasDiscrepancies: boolean | null; // Whether the verification found discrepancies
 }
 
 interface JobDetailsProps {
@@ -159,19 +161,30 @@ export function JobDetails({ jobData }: JobDetailsProps) {
             */}
           </div>
 
-           {/* Remove Contact Information section */}
-          {/*
-          <div className="pt-4 border-t">
-            ...
-          </div>
-          */}
+          {/* Verification Result Section */}
+          {(jobData.status === 'VERIFIED' || jobData.status === 'FLAGGED') && (
+            <div className="mt-4 pt-4 border-t">
+              <h3 className="text-sm font-medium mb-2">Verification Result</h3>
 
-           {/* Remove Issues section (issues are now part of VerificationResults) */}
-           {/*
-          {job.issues && (
-            ...
+              {jobData.hasDiscrepancies ? (
+                <Alert variant="destructive" className="mb-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Verification Flagged</AlertTitle>
+                  <AlertDescription>
+                    {jobData.verificationResult || "Verification completed with discrepancies"}
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Alert variant="default" className="mb-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <AlertTitle>Verification Successful</AlertTitle>
+                  <AlertDescription>
+                    {jobData.verificationResult || "All document checks passed successfully"}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
           )}
-          */}
         </div>
       </CardContent>
     </Card>
