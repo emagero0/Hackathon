@@ -212,7 +212,9 @@ public class JobDocumentVerificationService {
                 for (ClassifyAndVerifyResultDTO.FieldConfidenceDTO field : classificationResult.getFieldConfidences()) {
                     String fieldName = field.getFieldName(); // This is the identifier_label from LLM
                     String extractedValue = field.getExtractedValue();
-                    float confidence = field.getConfidence(); // LLM's extraction_confidence
+                    Double confidenceObj = field.getExtractionConfidence(); // LLM's extraction_confidence
+                    float confidence = (confidenceObj != null) ? confidenceObj.floatValue() : 0.0f;
+
 
                     if (LLM_LABEL_SALES_QUOTE_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
                         extractedSalesQuoteNo = extractedValue;
@@ -1127,7 +1129,8 @@ public class JobDocumentVerificationService {
                 for (ClassifyAndVerifyResultDTO.FieldConfidenceDTO field : result.getFieldConfidences()) {
                     String fieldName = field.getFieldName(); // This is the identifier_label from LLM
                     String extractedValue = field.getExtractedValue();
-                    float confidence = field.getConfidence(); // LLM's extraction_confidence
+                    Double confidenceObj = field.getExtractionConfidence(); // LLM's extraction_confidence
+                    float confidence = (confidenceObj != null) ? confidenceObj.floatValue() : 0.0f;
 
                     if (LLM_LABEL_SALES_QUOTE_NUMBER.equalsIgnoreCase(fieldName) && !isNotFound(extractedValue)) {
                         extractedIdentifiers.put(SALES_QUOTE_NUMBER_KEY, extractedValue);
